@@ -6,7 +6,6 @@ import random
 import sys
 import time
 
-
 from collections import namedtuple
 
 ColumnSelection = namedtuple('ColumnSelection', ['col','range'])
@@ -21,14 +20,12 @@ MoveEvent = namedtuple('MoveEvent', ['source', 'dest', 'num'])
 QuitEvent = namedtuple('QuitEvent', ['won'])
 MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
 
-UndoState = namedtuple('UndoState', ['foundations', 'cells', 'columns', 'timestamp', 'auto'])
+State = namedtuple('State', ['foundations', 'cells', 'columns'])
 
 Stats = namedtuple('Stats', ['time', 'moves', 'undos'])
 
 class InvalidMove(Exception):
     pass
-
-debug = False
 
 ace_is_A = False
 suites = {"c":"c", "d":"d", "h":"h", "s":"s"}
@@ -102,6 +99,19 @@ class Tableau(object):
 
         for i in range(52):
             self.columns[i%8].append(deck.deal())
+
+    @property
+    def state(self):
+        state = State(foundations=copy.deepcopy(self.foundations),
+                  cells = list(self.free_cells),
+                  columns = copy.deepcopy(self.columns))
+        return state
+
+    @state.setter
+    def state(self, state):
+        self.foundations = state.foundations
+        self.free_cells = state.cells
+        self.columns = state.columns
 
     def get_card(self, source):
         source_type, index = source[0], source[1:]
@@ -187,20 +197,25 @@ class FreeCellLogic(object):
 
     def handle_event(self, event):
 
-        self.process_move(event)
+        self.push_undo()
+        success = self.process_move(event)
+        if not success:
+            self.pop_undo()
 
         if self.is_solved():
             self.solved = True
             self.event_queue.append(QuitEvent(won=True))
 
     def test_supermove(self):
-        self.table.foundations = {"h":[], "s":[], "c":[], "d":[]}
-        self.table.columns = [[], [Card(2,"d")], [Card(2,"d")], [Card(2,"d")], [], [], [], [Card(7,"d")]]
-        self.table.free_cells = [Card(13, "d"), Card(13, "d"), None, None]
-        self.table.columns[0] = [Card(13,"h"), Card(12,"s"), Card(11,"h"), Card(10,"s"),
+        foundations = {"h":[], "s":[], "c":[], "d":[]}
+        columns = [[], [Card(2,"d")], [Card(2,"d")], [Card(2,"d")], [], [], [], [Card(7,"d")]]
+        free_cells = [Card(13, "d"), Card(13, "d"), None, None]
+        columns[0] = [Card(13,"h"), Card(12,"s"), Card(11,"h"), Card(10,"s"),
                                  Card(9,"h"), Card(8,"s"), Card(7, "h"), Card(6,"s"),
                                  Card(5,"h"), Card(4,"s"), Card(3,"h"), Card(2,"s")]
-        self.selected = None
+
+        state = State(foundations=foundations, columns=columns, cells=free_cells)
+        self.table.state = state
 
     def find_free_cell(self):
         for cellno, cell in enumerate(self.table.free_cells):
@@ -296,29 +311,12 @@ class FreeCellLogic(object):
                 return False
         return True
 
-    def push_undo(self, auto=False):
-        state = UndoState(foundations=copy.deepcopy(self.table.foundations),
-                          cells = list(self.table.free_cells),
-                          columns = copy.deepcopy(self.table.columns),
-                          timestamp=time.time(), auto=auto)
-        self.history.append(state)
-        self.moves += 1
+    def push_undo(self):
+        self.history.append(self.table.state)
 
     def pop_undo(self):
-        if len([x for x in self.history if x.auto == False]) == 0:
-            return
-
-        self.undos += 1
-        state = self.history.pop()
-        while state.auto == True:
-            self.moves -= 1
-            state = self.history.pop()
-
-        self.moves -= 1
-        self.table.foundations = state.foundations
-        self.table.free_cells = state.cells
-        self.table.columns = state.columns
-        self.selected = None
+        if len(self.history) > 0:
+            self.table.state = self.history.pop()
 
     def generate_supermove(self, column):
         self.undo_auto = True
@@ -425,12 +423,15 @@ class FreeCellLogic(object):
         if len(dest_col) > 0 and not dest_col[-1].can_stack(source_card):
             return False
 
-        if len(stack) > max_simple_move * 2**available_cols:
+        if len(stack) > max_simple_move * (1 + available_cols):
             return False
 
-        try:
-            self.supermove(simple_state, stack, int(event.source[1:]), int(event.dest[1:]))
+        #if len(stack) > max_simple_move * 2**available_cols:
+        #    return False
 
+        try:
+            self.move_queue = []
+            self.supermove(simple_state, stack, int(event.source[1:]), int(event.dest[1:]))
             self.event_queue.extend(self.move_queue)
         except Exception as e:
             self.event_queue.append(MessageEvent(level="error", message=str(e)))
@@ -554,8 +555,7 @@ class FreeCellGUI(object):
 
     def start(self, stdscr):
         self.stdscr = stdscr
-        if not debug:
-            curses.curs_set(0)
+        curses.curs_set(0)
         curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
         curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLUE)
         curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLUE)
@@ -638,7 +638,7 @@ class FreeCellGUI(object):
 
         # u Undo
         elif key == ord('u'):
-            self.logic.undo()
+            self.logic.pop_undo()
             self.selected = None
 
         # Escape Unselect
@@ -752,7 +752,7 @@ class FreeCellGUI(object):
         self.stdscr.attrset(curses.A_NORMAL)
 
 class FreeCellGame(object):
-    def __init__(self, event_queue, logic, gui, seed):
+    def __init__(self, event_queue, logic, gui, seed, debug):
         """
         :param list event_queue: Event Queue
         :param FreeCellLogic logic: Logic
@@ -765,6 +765,8 @@ class FreeCellGame(object):
         self.gui = gui
         self.seed = seed
         self.stats = None
+        self.debug = debug
+
 
     def start(self, stdscr):
         self.logic.load_seed(self.seed)
@@ -772,10 +774,18 @@ class FreeCellGame(object):
         self.game_loop()
 
     def game_loop(self):
+        if debug:
+            from pydevd import pydevd
+            pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
+
         self.gui.render()
         while self.running:
-            self.gui.get_input()
-            self.process_event()
+            try:
+                self.gui.get_input()
+                self.process_event()
+            except KeyboardInterrupt:
+                self.event_queue = [QuitEvent(won=False)]
+                self.process_event()
 
         self.stats = Stats(time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos)
 
@@ -797,6 +807,16 @@ class FreeCellGame(object):
 
 
 if __name__ == "__main__":
+
+    debug = False
+    if len(sys.argv) > 1 and sys.argv[1] == "debug":
+        try:
+            from debug import *
+            debug = True
+            sys.argv.pop(1)
+        except ImportError:
+            pass
+
     event_queue = []
     logic = FreeCellLogic(event_queue)
     gui = FreeCellGUI(event_queue, logic)
@@ -804,7 +824,7 @@ if __name__ == "__main__":
         seed = int(sys.argv[1])
     else:
         seed = random.randint(0, 0xffffffff)
-    game = FreeCellGame(event_queue, logic, gui, seed)
+    game = FreeCellGame(event_queue, logic, gui, seed, debug)
     curses.wrapper(game.start)
     if game.stats:
         m, s = divmod(game.stats.time, 60)

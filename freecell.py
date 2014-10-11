@@ -1,0 +1,813 @@
+#adapted from freecell.c http://www.linusakesson.net/software/
+
+import copy
+import curses
+import random
+import sys
+import time
+
+
+from collections import namedtuple
+
+ColumnSelection = namedtuple('ColumnSelection', ['col','range'])
+CellSelection = namedtuple('CellSelection', ['cell'])
+#Seed = namedtuple('Seed', ['seed', 'timestamp', 'next'])
+#Move = namedtuple('Move', ['dest', 'auto', 'timestamp', 'previous', 'next'])
+#Undo = namedtuple('Undo', ['timestamp', 'previous'])
+#Selection = namedtuple('Selection', ['source', 'range', 'auto', 'timestamp', 'previous', 'next'])
+
+InputEvent = namedtuple('InputEvent', ['key'])
+MoveEvent = namedtuple('MoveEvent', ['source', 'dest', 'num'])
+QuitEvent = namedtuple('QuitEvent', ['won'])
+MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
+
+UndoState = namedtuple('UndoState', ['foundations', 'cells', 'columns', 'timestamp', 'auto'])
+
+Stats = namedtuple('Stats', ['time', 'moves', 'undos'])
+
+class InvalidMove(Exception):
+    pass
+
+debug = False
+
+ace_is_A = False
+suites = {"c":"c", "d":"d", "h":"h", "s":"s"}
+
+class Card(object):
+    def __init__(self, value, suite):
+        """
+        :param int value: Value
+        :param str suite: Suite
+        """
+        self.value = value
+        self.suite = suite
+        self.color = ["b", "r"][suite in ["d", "h"]]
+        self.representation = None
+        """:type: str | None"""
+
+    # Can stack card onto self?
+    def can_stack(self, card):
+        """
+        :param Card card:
+        :rtype: bool
+        """
+        return (self.color != card.color) and (self.value == card.value + 1)
+
+    def __str__(self):
+        if self.representation is None:
+            if ace_is_A and self.value == 1:
+                self.representation = "A%s" % suites[self.suite]
+            else:
+                self.representation = "%2d%s" % (self.value, self.suite)
+        return self.representation
+
+class Deck(object):
+    def __init__(self):
+        self.cards = []
+        """:type: list[Card]"""
+
+    def shuffle(self, seed):
+        suites = ["c", "d", "h", "s"]
+        deck_nums = range(52)
+
+        for card in range(52):
+            cardsleft = 52-card
+            seed = (seed * 214013 + 2531011) & 0xffffffff
+            c = ((seed >> 16) & 0x7fff) % cardsleft
+
+            value = deck_nums[c]/4+1 # Map val into 1-13 range
+            suite = suites[deck_nums[c] % 4] # Map suite into Clubs, Diamonds, Hearts, Spades
+
+            self.cards.append(Card(value, suite))
+
+            # The following is clever...
+            # Replace current card with the last card (which is no longer accessible)
+            # If this _IS_ the last card, doesn't matter, because it won't be accessible in the next iteration
+            deck_nums[c] = deck_nums[cardsleft-1]
+
+        # Reverse for a natural deal
+        self.cards.reverse()
+
+    def deal(self):
+        return self.cards.pop()
+
+class Tableau(object):
+    def setup(self, deck):
+        self.columns = [[], [], [], [], [], [], [], []]
+        """:type: list[list[Card]]"""
+        self.free_cells = [None, None, None, None]
+        """:type: list[Card | None]"""
+        self.foundations = {"c":[], "d": [], "h": [], "s": []}
+        """:type: dict[str, list[Card]]"""
+
+        for i in range(52):
+            self.columns[i%8].append(deck.deal())
+
+    def get_card(self, source):
+        source_type, index = source[0], source[1:]
+
+        if source_type == "C":
+            column = self.columns[int(index)]
+            if len(column) == 0:
+                return None
+            else:
+                return column[-1]
+        elif source_type == "T":
+            return self.free_cells[int(index)]
+        elif source_type == "F":
+            foundation = self.foundations[index]
+            if len(foundation) == 0:
+                return None
+            else:
+                return foundation[-1]
+
+    def move(self, source, dest):
+        source_type, source_index = source[0], source[1:]
+        assert source_type in ("C", "T")
+        dest_type, dest_index = dest[0], dest[1:]
+        assert dest_type in ("C", "T", "F")
+
+        card = self.get_card(source)
+        assert card is not None
+
+        if source_type == "C":
+            self.columns[int(source_index)].pop()
+        elif source_type == "T":
+            self.free_cells[int(source_index)] = None
+
+        if dest_type == "C":
+            self.columns[int(dest_index)].append(card)
+        elif dest_type == "T":
+            self.free_cells[int(dest_index)] = card
+        elif dest_type == "F":
+            self.foundations[dest_index].append(card)
+
+    def __str__(self):
+        ret_str = ""
+        row = []
+        for i in range(52):
+            if i % 8 == 0 and i > 1:
+                ret_str += " ".join(row)
+                ret_str += "\n"
+                row = []
+            row.append(str(self.columns[i%8][i/8]))
+
+        ret_str += " ".join(row)
+        return ret_str
+
+    def height(self):
+        return max([len(x) for x in self.columns])
+
+class FreeCellLogic(object):
+    def __init__(self, event_queue):
+        """
+        :param list event_queue: Event Queue
+        """
+        self.deck = Deck()
+        self.table = Tableau()
+        self.event_queue = event_queue
+
+    def load_seed(self, seed):
+        self.seed = seed
+        self.deck.shuffle(seed)
+        self.table.setup(self.deck)
+
+        self.start = time.time()
+
+        self.history = []
+        self.solved = False
+        # TODO: store time in *Game
+        self.time = 0
+        self.moves = 0
+        self.undos = 0
+        self.num_mod = 0
+        self.move_queue = []
+
+        self.undo_auto = False
+
+    def handle_event(self, event):
+
+        self.process_move(event)
+
+        if self.is_solved():
+            self.solved = True
+            self.event_queue.append(QuitEvent(won=True))
+
+    def test_supermove(self):
+        self.table.foundations = {"h":[], "s":[], "c":[], "d":[]}
+        self.table.columns = [[], [Card(2,"d")], [Card(2,"d")], [Card(2,"d")], [], [], [], [Card(7,"d")]]
+        self.table.free_cells = [Card(13, "d"), Card(13, "d"), None, None]
+        self.table.columns[0] = [Card(13,"h"), Card(12,"s"), Card(11,"h"), Card(10,"s"),
+                                 Card(9,"h"), Card(8,"s"), Card(7, "h"), Card(6,"s"),
+                                 Card(5,"h"), Card(4,"s"), Card(3,"h"), Card(2,"s")]
+        self.selected = None
+
+    def find_free_cell(self):
+        for cellno, cell in enumerate(self.table.free_cells):
+            if cell is None:
+                return "T%d" % cellno
+        else:
+            return None
+
+    def move_ready(self):
+        if len(self.move_queue) > 0:
+            return True
+
+        for card in self.table.free_cells:
+            if card is not None and self.can_automove(card):
+                return True
+
+        for column in self.table.columns:
+            if len(column) > 0 and self.can_automove(column[-1]):
+                    return True
+
+        return False
+
+    def can_automove(self, card):
+        foundations = self.table.foundations
+        if len(foundations[card.suite]) == 0:
+            if card.value != 1:
+                return False
+            else:
+                return True
+
+        if not foundations[card.suite][-1].value == card.value - 1:
+            return False
+
+        red = ["h","d"]
+        black = ["c","s"]
+
+        if card.suite in red:
+            this = red
+            other = black
+        else:
+            this = black
+            other = red
+
+        this.remove(card.suite)
+
+        ov1 = len(foundations[other[0]]) > 0 and foundations[other[0]][-1].value
+        ov2 = len(foundations[other[1]]) > 0 and foundations[other[1]][-1].value
+        sv = len(foundations[this[0]]) > 0 and foundations[this[0]][-1].value
+
+        # Nothing to put this card on
+        if ov1 >= card.value - 1 and ov2 >= card.value - 1:
+            return True
+
+        # Not sure
+        if ov1 >= card.value - 2 and ov2 >= card.value - 2 \
+            and sv >= card.value - 3:
+            return True
+
+    def automove(self):
+        if len(self.move_queue) > 0:
+            #"T1-C1"
+            move = self.move_queue.pop(0)
+            src, dest = move.split("-")
+            if src[0] == "T":
+                self.selected = CellSelection(cell=int(src[1:]))
+            elif src[0] == "C":
+                self.selected = ColumnSelection(col=int(src[1:]), range=1)
+
+            self.push_undo(auto=True)
+            if dest[0] == "T":
+                self.move_selected(cell=int(dest[1:]))
+            elif dest[0] == "C":
+                self.move_selected(column=int(dest[1:]))
+            return
+
+        for cellno, card in enumerate(self.table.free_cells):
+            if card is not None and self.can_automove(card):
+                self.push_undo(auto=True)
+                self.selected = CellSelection(cell=cellno)
+                self.move_selected(foundation=True)
+                return
+
+        for colno, column in enumerate(self.table.columns):
+            if len(column) > 0 and self.can_automove(column[-1]):
+                self.push_undo(auto=True)
+                self.selected = ColumnSelection(col=colno, range=1)
+                self.move_selected(foundation=True)
+                return
+
+    def is_solved(self):
+        for foundation in self.table.foundations.values():
+            if len(foundation) == 0 or foundation[-1].value != 13:
+                return False
+        return True
+
+    def push_undo(self, auto=False):
+        state = UndoState(foundations=copy.deepcopy(self.table.foundations),
+                          cells = list(self.table.free_cells),
+                          columns = copy.deepcopy(self.table.columns),
+                          timestamp=time.time(), auto=auto)
+        self.history.append(state)
+        self.moves += 1
+
+    def pop_undo(self):
+        if len([x for x in self.history if x.auto == False]) == 0:
+            return
+
+        self.undos += 1
+        state = self.history.pop()
+        while state.auto == True:
+            self.moves -= 1
+            state = self.history.pop()
+
+        self.moves -= 1
+        self.table.foundations = state.foundations
+        self.table.free_cells = state.cells
+        self.table.columns = state.columns
+        self.selected = None
+
+    def generate_supermove(self, column):
+        self.undo_auto = True
+        if column == self.selected.col:
+            return False
+
+        source_card = self.table.columns[self.selected.col][-self.selected.range]
+        if len(self.table.columns[column]) > 0 and not self.table.columns[column][-1].can_stack(source_card):
+            return False
+        supermove_selection = self.selected
+        locations = []
+        length = supermove_selection.range
+        available_cells = len([x for x in self.table.free_cells if x is None])
+        available_cols = len([x for x in self.table.columns if len(x) == 0]) # this is a lower bound
+        # if you write an exploratory algorithm, you'll be able to use columns that can fit SOME part of your stack
+        if len(self.table.columns[column]) == 0:
+            available_cols -= 1
+
+        if length > (1 + available_cells) * (1 + available_cols):
+            return False
+
+        if length <= available_cells + 1:
+            while length > 1:
+                cell = self.find_free_cell()
+                self.selected = ColumnSelection(col=supermove_selection.col, range=1)
+                self.push_undo(auto=True)
+                self.move_selected(cell=cell, store=True)
+                locations.append(("T%d" % cell, 1))
+                length -= 1
+            self.selected = ColumnSelection(col=supermove_selection.col, range=1)
+            self.push_undo(auto=True)
+            self.move_selected(column=column, store=True)
+            for location in reversed(locations):
+                if location[0].startswith("T"):
+                    cell = int(location[0][1:])
+                    self.selected = CellSelection(cell=cell)
+                    self.push_undo(auto=True)
+                    self.move_selected(column=column, store=True)
+            return True
+        else:
+            # TODO: for supermoves, scan them from the top of the range to see if there is a non-empty spot they can be moved to
+            # This will be even more efficient.
+            dest_column = column
+            max_copy = available_cells+1
+            num_supermoves = length/max_copy
+            remaining = length % max_copy
+            used_columns = [dest_column]
+            for i in range(num_supermoves):
+                self.selected = ColumnSelection(col=supermove_selection.col, range=max_copy)
+                if max_copy == 1:
+                    self.push_undo(auto=True)
+                source_card = self.table.columns[self.selected.col][-max_copy]
+                if remaining == 0 and i == num_supermoves-1:
+                    colno = dest_column
+                else:
+                    for colno, column in enumerate(self.table.columns):
+                        if colno not in used_columns \
+                            and (len(column) == 0 or column[-1].can_stack(source_card)):
+                            break
+                self.move_selected(column=colno, store=True)
+                if colno != dest_column:
+                    locations.append((("S%d") % colno, max_copy))
+                    used_columns.append(colno)
+            if remaining > 0:
+                self.selected = ColumnSelection(col=supermove_selection.col, range=remaining)
+                self.generate_supermove(dest_column)
+            for location in reversed(locations):
+                if location[0].startswith("S"):
+                    col = int(location[0][1:])
+                    self.selected = ColumnSelection(col=col, range=location[1])
+                    self.generate_supermove(dest_column)
+            return True
+
+    def fill_cells(self, move_event):
+
+        length = move_event.num
+        available_cells = ["T%d" % cell for cell, x in enumerate(self.table.free_cells) if x is None]
+
+        if length > len(available_cells):
+            return False
+
+        for i in range(length):
+            cell = available_cells[i]
+            self.event_queue.append(MoveEvent(source=move_event.source, dest=cell, num=1))
+        return True
+
+    def make_supermove(self, event):
+        simple_state = {"free_cells":[],
+                        "columns":[]}
+        simple_state["free_cells"] = copy.deepcopy(self.table.free_cells)
+        simple_state["columns"] = copy.deepcopy(self.table.columns)
+
+        max_simple_move = len([x for x in simple_state["free_cells"] if x is None]) + 1
+        stack = self.table.columns[int(event.source[1:])][-event.num:]
+
+        available_cols = len([x for x in self.table.columns if len(x) == 0]) # this is a lower bound
+        # if you write an exploratory algorithm, you'll be able to use columns that can fit SOME part of your stack
+
+        if len(self.table.columns[int(event.dest[1:])]) == 0:
+            available_cols -= 1
+
+        source_card = stack[0]
+        dest_col = simple_state["columns"][int(event.dest[1:])]
+        if len(dest_col) > 0 and not dest_col[-1].can_stack(source_card):
+            return False
+
+        if len(stack) > max_simple_move * 2**available_cols:
+            return False
+
+        try:
+            self.supermove(simple_state, stack, int(event.source[1:]), int(event.dest[1:]))
+
+            self.event_queue.extend(self.move_queue)
+        except Exception as e:
+            self.event_queue.append(MessageEvent(level="error", message=str(e)))
+
+    def simple_supermove(self, state, stack, source, dest):
+        state = copy.deepcopy(state)
+
+        used_cells = []
+        length = len(stack)
+        free_cells = [cell for cell, x in enumerate(state["free_cells"]) if x is None]
+        for i in range(length-1):
+            cell = free_cells.pop()
+            used_cells.append(cell)
+            self.move_queue.append(MoveEvent(source="C%d" % source, dest="T%d" % cell, num=1))
+        self.move_queue.append(MoveEvent(source="C%d" % source, dest="C%d" % dest, num=1))
+        # Reverse
+        for cell in reversed(used_cells):
+            self.move_queue.append(MoveEvent(source="T%d" % cell, dest="C%d" % dest, num=1))
+
+        state["columns"][dest].extend(state["columns"][source][-len(stack):])
+        state["columns"][source] = state["columns"][source][:-len(stack)]
+
+        return state
+
+    def supermove(self, state, stack, source, dest):
+        state = copy.deepcopy(state)
+        max_simple_move = len([x for x in state["free_cells"] if x is None]) + 1
+
+        remaining = len(stack) % max_simple_move
+        if remaining == 0:
+            remaining = max_simple_move
+        # Clear top of stack
+        if len(stack) > max_simple_move:
+            for colno, column in enumerate(state["columns"]):
+                if (len(column) == 0 or column[-1].can_stack(stack[remaining]) ) and colno != dest:
+                    free_col = colno
+                    break
+            else:
+                raise Exception("Failed to generate supermove. This is a bug.")
+                assert False # oh no, calculation was wrong
+            state = self.supermove(state, stack[remaining:], source, free_col)
+
+        # Move base of stack (base case!)
+        state = self.simple_supermove(state, stack[:remaining], source, dest)
+
+        # Put top of stack back onto base
+        if len(stack) > max_simple_move:
+            state = self.supermove(state, stack[remaining:], free_col, dest)
+
+        return state
+
+    def process_move(self, move_event):
+        """
+        :param MoveEvent move_event: Move Event
+        :rtype: bool
+        """
+        if move_event.dest == "T":
+            return self.fill_cells(move_event)
+
+        if move_event.num > 1:
+            # Really, all of these moves should be handled outside.
+            # Maybe have the GUI call a movebot to generate this given the state.
+            if move_event.dest.startswith("C"):
+                return self.make_supermove(move_event)
+            else:
+                # Not going to allow moving a stack to the foundation. It might not even be possible?
+                # Doesn't make sense to try and move a stack to a singular free cell either.
+                return False
+
+        card = self.table.get_card(move_event.source)
+
+        if card is None: # Can't move a nothing
+            return False
+
+        valid = False
+        dest_card = self.table.get_card(move_event.dest)
+
+        if move_event.dest.startswith("C"):
+            if dest_card is None or dest_card.can_stack(card):
+                valid = True
+        elif move_event.dest.startswith("T"):
+            if dest_card is None:
+                valid = True
+        else: # foundation move uses different validation
+            if card.value == 1 or dest_card.value == card.value - 1:
+                valid = True
+
+        if valid:
+            self.table.move(move_event.source, move_event.dest)
+            time.sleep(.1)
+        return valid
+
+    def contiguous_range(self, column):
+        chain_size = 0
+        lower_card = None
+
+        # verify range is valid, otherwise use largest stack size
+        for card in list(reversed(self.table.columns[column])):
+            if lower_card is not None:
+                if not card.can_stack(lower_card):
+                    break
+            lower_card = card
+            chain_size += 1
+
+        return chain_size
+
+class FreeCellGUI(object):
+    def __init__(self, event_queue, logic):
+        """
+        :param list event_queue: Event Queue
+        :param FreeCellLogic logic: Logic
+        """
+        self.logic = logic
+        self.event_queue = event_queue
+
+        # for selection
+        self.selected = None
+        """:type : CellSelection | ColumnSelection | None"""
+        self.range = 0
+        """:type : int"""
+
+    def start(self, stdscr):
+        self.stdscr = stdscr
+        if not debug:
+            curses.curs_set(0)
+        curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
+        curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLUE)
+        curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLUE)
+        curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+
+        curses.halfdelay(2)
+
+        self.face_dir = 1
+
+    def get_input(self):
+        key = self.stdscr.getch()
+        if key != curses.ERR:
+            self.event_queue.append(InputEvent(key=key))
+
+    def handle_event(self, event):
+        if isinstance(event, InputEvent):
+            self.handle_input(event)
+        elif isinstance(event, MessageEvent):
+            self.display_message(event)
+
+    def display_message(self, event):
+        for i in range(10): # 5 seconds
+            self.stdscr.addstr(7+self.logic.table.height(), 0, "%s: %s" % (event.level, event.message))
+            self.stdscr.refresh()
+            time.sleep(.4)
+            self.stdscr.deleteln()
+            self.stdscr.refresh()
+            time.sleep(.1)
+
+        self.stdscr.move(5 + self.logic.table.height(), 43)
+
+    def handle_input(self, event):
+        reset_num = True
+        key = event.key
+
+        # a-h Columns
+        if key >= ord('a') and key <= ord('h'):
+            column = key-ord('a')
+            if self.selected is None:
+                if self.range > 0:
+                    select_range = min(self.range, self.logic.contiguous_range(column))
+                else:
+                    select_range = 1
+
+                if select_range > 0:
+                    self.selected = ColumnSelection(col=column, range=select_range)
+            else:
+                self.create_move("C%d" % column)
+                self.selected = None
+
+        # w-z Cells
+        elif key >= ord('w') and key <= ord('z'):
+            cell = key-ord('w')
+            if self.selected is None:
+                if self.logic.table.get_card("T%d" % cell) is not None:
+                    self.selected = CellSelection(cell=cell)
+            else:
+                self.create_move("T%d" % cell)
+                self.selected = None
+
+        # 0-9 Range modifier
+        elif key >= ord('0') and key <= ord('9'):
+            self.selected = None
+            new_mod = self.range * 10 + int(key-ord('0'))
+            if new_mod < 100:
+                self.range = new_mod
+            reset_num = False
+
+        # Enter Send to foundation
+        elif key in (10, 13, curses.KEY_ENTER):
+            if self.selected is not None:
+                self.create_move("F")
+                self.selected = None
+
+        # Space Send to free cell
+        elif key == 32:
+            if self.selected is not None:
+                self.create_move("T")
+                self.selected = None
+
+        # u Undo
+        elif key == ord('u'):
+            self.logic.undo()
+            self.selected = None
+
+        # Escape Unselect
+        elif key == 27:
+            self.selected = None
+
+        # Q quit
+        elif key == ord('Q'):
+            self.event_queue.append(QuitEvent(won=False))
+
+        # s Load supermove test
+        elif key == ord('s'):
+            self.logic.test_supermove()
+            self.selected = None
+
+        if reset_num:
+            self.range = 0
+
+    def create_move(self, dest):
+        assert self.selected is not None
+
+        if isinstance(self.selected, ColumnSelection):
+            source = "C%d" % self.selected.col
+            num = self.selected.range
+        else: # CellSelection
+            source = "T%d" % self.selected.cell
+            num = 1
+
+        move = MoveEvent(source=source, dest=dest, num=num)
+        self.event_queue.append(move)
+        self.selected = None
+
+    def render(self):
+        self.render_base()
+        self.render_cards()
+        self.stdscr.refresh()
+        self.stdscr.move(5 + self.logic.table.height(), 43)
+
+    def render_base(self):
+        self.stdscr.erase()
+        self.stdscr.addstr(0, 0, "space                                  enter")
+        seed_str = "#%d" % self.logic.seed
+        self.stdscr.addstr(0, 22-len(seed_str)/2, seed_str)
+        self.stdscr.addstr(1, 0, "[   ][   ][   ][   ]    [   ][   ][   ][   ]")
+        if self.range > 0:
+            self.stdscr.addstr(1, 21, str(self.range))
+        else:
+            if isinstance(self.selected, ColumnSelection):
+                if self.selected.col < 4:
+                    self.face_dir = 0
+                else:
+                    self.face_dir = 1
+            self.stdscr.attrset(curses.A_BOLD | curses.color_pair(4))
+            self.stdscr.addstr(1, 21, ("(=", "=)")[self.face_dir])
+            self.stdscr.attrset(curses.A_NORMAL)
+        height = self.logic.table.height()
+
+        self.stdscr.addstr(5 + height, 0, "    a    b    c    d    e    f    g    h")
+        statusline = "%d move%s, %d undo%s" % (self.logic.moves, ["s",""][self.logic.moves == 1],
+                                        self.logic.undos, ["s", ""][self.logic.undos == 1])
+        self.stdscr.addstr(6 + height, 44 - len(statusline), statusline)
+        self.stdscr.addstr(6 + height, 0, "Quit undo ?=help")
+        self.stdscr.attrset(curses.color_pair(1))
+        self.stdscr.addch(6 + height, 0, 'Q')
+        self.stdscr.addch(6 + height, 5, 'u')
+        self.stdscr.addch(6 + height, 10, '?')
+        self.stdscr.attrset(curses.A_NORMAL)
+
+    def render_cards(self):
+        # Cells
+        for cellno, card in enumerate(self.logic.table.free_cells):
+            if card is not None:
+                selected = isinstance(self.selected, CellSelection) \
+                           and self.selected.cell == cellno
+
+                self.stdscr.move(1, 1 + 5 *cellno)
+                self.render_card(card, selected)
+                self.stdscr.addch(2, 2 + 5 * cellno, "wxyz"[cellno])
+
+        for foundno, stack in enumerate(self.logic.table.foundations.values()):
+            if len(stack) > 0:
+                self.stdscr.move(1, 25 + 5 * foundno)
+                self.render_card(stack[-1], False)
+
+        # Render cards
+        for colno, column in enumerate(self.logic.table.columns):
+            selected = isinstance(self.selected, ColumnSelection) \
+                       and self.selected.col == colno
+
+            if selected:
+                range = self.selected.range
+
+            for cardno, card in enumerate(column):
+                self.stdscr.move(4 + cardno, 3 + 5 * colno)
+                self.render_card(card, selected and cardno >= (len(column) - range) )
+
+    def render_card(self, card, selected):
+        if selected:
+            if card.color == "r":
+                color_pair = curses.color_pair(3)
+            else:
+                color_pair = curses.color_pair(2)
+        else:
+            if card.color == "r":
+                color_pair = curses.color_pair(1)
+            else:
+                color_pair = curses.A_NORMAL
+
+        self.stdscr.attrset(color_pair)
+        self.stdscr.addstr(str(card))
+        self.stdscr.attrset(curses.A_NORMAL)
+
+class FreeCellGame(object):
+    def __init__(self, event_queue, logic, gui, seed):
+        """
+        :param list event_queue: Event Queue
+        :param FreeCellLogic logic: Logic
+        :param FreeCellGUI gui: GUI
+        :param int seed: Seed
+        """
+        self.running = True
+        self.event_queue = event_queue
+        self.logic = logic
+        self.gui = gui
+        self.seed = seed
+        self.stats = None
+
+    def start(self, stdscr):
+        self.logic.load_seed(self.seed)
+        self.gui.start(stdscr)
+        self.game_loop()
+
+    def game_loop(self):
+        self.gui.render()
+        while self.running:
+            self.gui.get_input()
+            self.process_event()
+
+        self.stats = Stats(time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos)
+
+    def process_event(self):
+        while len(self.event_queue) > 0:
+            event = self.event_queue.pop(0)
+
+            if isinstance(event, (InputEvent, MessageEvent)):
+                self.gui.handle_event(event)
+            elif isinstance(event, MoveEvent):
+                self.logic.handle_event(event) # .05s sleep before move UNLESS triggered by user (immediate=True, or something like that)
+            elif isinstance(event, QuitEvent):
+                self.quit(event)
+
+            self.gui.render()
+
+    def quit(self, event):
+        self.running = False
+
+
+if __name__ == "__main__":
+    event_queue = []
+    logic = FreeCellLogic(event_queue)
+    gui = FreeCellGUI(event_queue, logic)
+    if len(sys.argv) > 1:
+        seed = int(sys.argv[1])
+    else:
+        seed = random.randint(0, 0xffffffff)
+    game = FreeCellGame(event_queue, logic, gui, seed)
+    curses.wrapper(game.start)
+    if game.stats:
+        m, s = divmod(game.stats.time, 60)
+        h, m = divmod(m, 60)
+        time_str = "%dh%02dm%.2fs" % (h, m, s)
+        print "seed %d, %s, %d moves, %d undos" % (seed, time_str, game.stats.moves, game.stats.undos)

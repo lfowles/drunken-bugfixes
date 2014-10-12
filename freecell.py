@@ -438,7 +438,7 @@ class FreeCellGUI(object):
         # for selection
         self.selected = None
         """:type : CellSelection | ColumnSelection | None"""
-        self.range = 0
+        self.select_num = 0
         """:type : int"""
 
     def start(self, stdscr):
@@ -483,8 +483,8 @@ class FreeCellGUI(object):
         if ord('a') <= key <= ord('h'):
             column = key-ord('a')
             if self.selected is None:
-                if self.range > 0:
-                    select_num = min(self.range, self.logic.contiguous_range(column))
+                if self.select_num > 0:
+                    select_num = min(self.select_num, self.logic.contiguous_range(column))
                 else:
                     select_num = 1
 
@@ -507,9 +507,9 @@ class FreeCellGUI(object):
         # 0-9 Range modifier
         elif ord('0') <= key <= ord('9'):
             self.selected = None
-            new_mod = self.range * 10 + int(key-ord('0'))
+            new_mod = self.select_num * 10 + int(key-ord('0'))
             if new_mod < 100:
-                self.range = new_mod
+                self.select_num = new_mod
             reset_num = False
 
         # Enter Send to foundation
@@ -543,7 +543,7 @@ class FreeCellGUI(object):
             self.selected = None
 
         if reset_num:
-            self.range = 0
+            self.select_num = 0
 
     def create_move(self, dest):
         assert self.selected is not None
@@ -576,8 +576,8 @@ class FreeCellGUI(object):
         seed_str = "#%d" % self.logic.seed
         self.stdscr.addstr(0, 22-len(seed_str)/2, seed_str)
         self.stdscr.addstr(1, 0, "[   ][   ][   ][   ]    [   ][   ][   ][   ]")
-        if self.range > 0:
-            self.stdscr.addstr(1, 21, str(self.range))
+        if self.select_num > 0:
+            self.stdscr.addstr(1, 21, str(self.select_num))
         else:
             if isinstance(self.selected, ColumnSelection):
                 if self.selected.col < 4:

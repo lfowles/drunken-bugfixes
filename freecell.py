@@ -114,6 +114,10 @@ class Tableau(object):
         self.columns = state.columns
 
     def get_card(self, source):
+        """
+        :param str source:
+        :rtype: Card|None
+        """
         source_type, index = source[0], source[1:]
 
         if source_type == "C":
@@ -195,6 +199,8 @@ class FreeCellLogic(object):
 
         self.undo_auto = False
 
+        self.automove()
+
     def handle_event(self, event):
 
         self.push_undo()
@@ -258,11 +264,11 @@ class FreeCellLogic(object):
     def automove(self):
         for cellno, card in enumerate(self.table.free_cells):
             if card is not None and self.can_automove(card):
-                self.event_queue.append(MoveEvent(source="T%d" % cellno, dest="F", num=1))
+                self.event_queue.append(MoveEvent(source="T%d" % cellno, dest="F%s" % card.suite, num=1))
 
         for colno, column in enumerate(self.table.columns):
             if len(column) > 0 and self.can_automove(column[-1]):
-                self.event_queue.append(MoveEvent(source="C%d" % colno, dest="F", num=1))
+                self.event_queue.append(MoveEvent(source="C%d" % colno, dest="F%s" % column[-1].suite, num=1))
 
     def is_solved(self):
         for foundation in self.table.foundations.values():
@@ -402,8 +408,12 @@ class FreeCellLogic(object):
             if dest_card is None:
                 valid = True
         else: # foundation move uses different validation
-            if card.value == 1 or dest_card.value == card.value - 1:
-                valid = True
+            if dest_card is None:
+                if card.value == 1:
+                    valid = True
+            else:
+                if dest_card.value == card.value - 1:
+                    valid = True
 
         if valid:
             self.table.move(move_event.source, move_event.dest)
@@ -552,6 +562,11 @@ class FreeCellGUI(object):
         else: # CellSelection
             source = "T%d" % self.selected.cell
             num = 1
+
+        if dest == "F":
+            # Get suite
+            card = self.logic.table.get_card(source)
+            dest = "F%s" % card.suite
 
         move = MoveEvent(source=source, dest=dest, num=num)
         self.event_queue.append(move)

@@ -3,20 +3,41 @@ HOST, PORT = "localhost", 11982
 
 import asyncore
 import asynchat
+import json
 import Queue
 import random
 import socket
 import string
+import threading
 
 from collections import namedtuple
 
+
 JoinEvent = namedtuple('JoinEvent', ['id', 'version'])
 QuitEvent = namedtuple('QuitEvent', ['id'])
+StopServerEvent = namedtuple('StopServerEvent', ['reason'])
 
 class CompetitionServer(object):
-    def __init__(self, event_queue):
-        self.event_queue = event_queue
+    def __init__(self, host, port):
+        self.event_queue = Queue.Queue()
         self.competitors = {}
+        self.run_networking = threading.Event()
+        self.networking = FreecellServer(host, port, self.event_queue, self.run_networking)
+        threading.Thread(target=self.networking.run).start()
+        self.running = True
+
+    def start(self):
+        self.run_networking.set()
+        self.loop()
+
+    def loop(self):
+        while self.running:
+            try:
+                self.update()
+            except KeyboardInterrupt:
+                self.quit("Keyboard Interrupt")
+                self.running = False
+        self.run_networking.clear()
 
     def update(self):
         try:
@@ -35,12 +56,15 @@ class CompetitionServer(object):
     def competitor_quit(self, addr):
         pass
 
+    def quit(self, reason):
+        self.event_queue.put(StopServerEvent(reason=reason))
+
 class FreecellCompetitor(asynchat.async_chat):
     def __init__(self, sock, addr, event_queue):
         """
         :param socket.socket sock: Socket
         :param (str, int) addr: Address
-        :param Queue event_queue: Event queue
+        :param Queue.Queue event_queue: Event queue
         """
         asynchat.async_chat.__init__(self, sock=sock)
         self.set_terminator("\r\n")
@@ -59,37 +83,59 @@ class FreecellCompetitor(asynchat.async_chat):
         self.buffer.append(data)
 
     def found_terminator(self):
-        self.create_event("".join(self.buffer))
+        message = json.loads("".join(self.buffer))
+        if "event" in message:
+            self.create_event(message)
+        else:
+            print "Non-event message received"
+
         self.buffer = []
 
-    def create_event(self, data):
-        event_type, trash, rest = data.partition(" ")
-        print event_type
-        if event_type == "connect":
-            self.event_queue.put(JoinEvent(id=self.id, version=float(rest)))
+    def create_event(self, message):
+        if message["event"] == "connect":
+            self.event_queue.put(JoinEvent(id=self.id, version=message["event"]))
             self.state = "connected"
 
 class FreecellServer(asyncore.dispatcher):
-    def __init__(self, host, port, event_queue):
+    def __init__(self, host, port, event_queue, run_signal):
+        """
+        :param str host: Host
+        :param int port: Port
+        :param Queue.Queue event_queue: Event Queue
+        :param threading.Event run_signal: Run signal
+        """
         asyncore.dispatcher.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.set_reuse_addr()
         self.bind((host, port))
         self.listen(1)
         self.event_queue = event_queue
+        self.connections = {}
+        """:type : dict[(str, int), FreecellCompetitor]"""
+        self.running = run_signal
+
+    def run(self):
+        self.running.wait()
+        while self.running.is_set():
+            asyncore.loop(timeout=1, count=1)
+            self.update_connections()
+
+        for connection in self.connections.values():
+            connection.close_when_done()
+
+    def update_connections(self):
+        for addr, connection in self.connections.items():
+            if connection.state == "disconnected":
+                del self.connections[addr]
 
     def handle_accept(self):
         pair = self.accept()
         if pair is not None:
             sock, addr = pair
             handler = FreecellCompetitor(sock, addr, self.event_queue)
+            self.connections[addr] = handler
 
 if __name__ == "__main__":
-    event_queue = Queue.Queue()
-    network_server = FreecellServer(HOST, PORT, event_queue)
-    competition_server = CompetitionServer(event_queue)
-    while True:
-        asyncore.loop(count=1, timeout=.1)
-        # todo: slap that in a thread
-        competition_server.update()
+    competition_server = CompetitionServer(HOST, PORT)
+    competition_server.start()
 

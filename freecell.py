@@ -4,6 +4,7 @@ import copy
 import curses
 import random
 import sys
+import Queue
 import time
 
 from collections import namedtuple
@@ -176,7 +177,7 @@ class Tableau(object):
 class FreeCellLogic(object):
     def __init__(self, event_queue):
         """
-        :param list event_queue: Event Queue
+        :param Queue.Queue event_queue: Event Queue
         """
         self.deck = Deck()
         self.table = Tableau()
@@ -210,7 +211,7 @@ class FreeCellLogic(object):
 
         if self.is_solved():
             self.solved = True
-            self.event_queue.append(QuitEvent(won=True))
+            self.event_queue.put(QuitEvent(won=True))
 
     def test_supermove(self):
         foundations = {"h":[], "s":[], "c":[], "d":[]}
@@ -264,15 +265,15 @@ class FreeCellLogic(object):
         for cellno, card in enumerate(self.table.free_cells):
             if card is not None and self.can_automove(card):
                 found_moves = True
-                self.event_queue.append(MoveEvent(source="T%d" % cellno, dest="F%s" % card.suite, num=1))
+                self.event_queue.put(MoveEvent(source="T%d" % cellno, dest="F%s" % card.suite, num=1))
 
         for colno, column in enumerate(self.table.columns):
             if len(column) > 0 and self.can_automove(column[-1]):
                 found_moves = True
-                self.event_queue.append(MoveEvent(source="C%d" % colno, dest="F%s" % column[-1].suite, num=1))
+                self.event_queue.put(MoveEvent(source="C%d" % colno, dest="F%s" % column[-1].suite, num=1))
 
         if found_moves:
-            self.event_queue.append(MoveCompleteEvent(unused=''))
+            self.event_queue.put(MoveCompleteEvent(unused=''))
 
     def is_solved(self):
         for foundation in self.table.foundations.values():
@@ -296,8 +297,8 @@ class FreeCellLogic(object):
 
         for i in range(length):
             cell = available_cells[i]
-            self.event_queue.append(MoveEvent(source=move_event.source, dest=cell, num=1))
-        self.event_queue.append(MoveCompleteEvent(unused=''))
+            self.event_queue.put(MoveEvent(source=move_event.source, dest=cell, num=1))
+        self.event_queue.put(MoveCompleteEvent(unused=''))
         return True
 
     def make_supermove(self, event):
@@ -327,10 +328,11 @@ class FreeCellLogic(object):
         try:
             self.move_queue = []
             self.supermove(simple_state, stack, int(event.source[1:]), int(event.dest[1:]))
-            self.event_queue.extend(self.move_queue)
-            self.event_queue.append(MoveCompleteEvent(unused=''))
+            for move in self.move_queue:
+                self.event_queue.put(move)
+            self.event_queue.put(MoveCompleteEvent(unused=''))
         except Exception as e:
-            self.event_queue.append(MessageEvent(level="error", message=str(e)))
+            self.event_queue.put(MessageEvent(level="error", message=str(e)))
 
     def simple_supermove(self, state, stack, source, dest):
         state = copy.deepcopy(state)
@@ -440,7 +442,7 @@ class FreeCellLogic(object):
 class FreeCellGUI(object):
     def __init__(self, event_queue, logic):
         """
-        :param list event_queue: Event Queue
+        :param Queue.Queue event_queue: Event Queue
         :param FreeCellLogic logic: Logic
         """
         self.logic = logic
@@ -467,7 +469,7 @@ class FreeCellGUI(object):
     def get_input(self):
         key = self.stdscr.getch()
         if key != curses.ERR:
-            self.event_queue.append(InputEvent(key=key))
+            self.event_queue.put(InputEvent(key=key))
 
     def handle_event(self, event):
         if isinstance(event, InputEvent):
@@ -546,7 +548,7 @@ class FreeCellGUI(object):
 
         # Q quit
         elif key == ord('Q'):
-            self.event_queue.append(QuitEvent(won=False))
+            self.event_queue.put(QuitEvent(won=False))
 
         # s Load supermove test
         elif key == ord('s'):
@@ -572,8 +574,8 @@ class FreeCellGUI(object):
             dest = "F%s" % card.suite
 
         move = MoveEvent(source=source, dest=dest, num=num)
-        self.event_queue.append(move)
-        self.event_queue.append(MoveCompleteEvent(unused=""))
+        self.event_queue.put(move)
+        self.event_queue.put(MoveCompleteEvent(unused=""))
         self.selected = None
 
     def render(self):
@@ -661,7 +663,7 @@ class FreeCellGUI(object):
 class FreeCellGame(object):
     def __init__(self, event_queue, logic, gui, seed, debug):
         """
-        :param list event_queue: Event Queue
+        :param Queue.Queue event_queue: Event Queue
         :param FreeCellLogic logic: Logic
         :param FreeCellGUI gui: GUI
         :param int seed: Seed
@@ -690,14 +692,16 @@ class FreeCellGame(object):
                 self.gui.get_input()
                 self.process_event()
             except KeyboardInterrupt:
-                self.event_queue = [QuitEvent(won=False)]
+                while not self.event_queue.empty():
+                    self.event_queue.get()
+                self.event_queue.put(QuitEvent(won=False))
                 self.process_event()
 
         self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
 
     def process_event(self):
-        while len(self.event_queue) > 0:
-            event = self.event_queue.pop(0)
+        while not self.event_queue.empty():
+            event = self.event_queue.get_nowait()
 
             if isinstance(event, (InputEvent, MessageEvent)):
                 self.gui.handle_event(event)
@@ -723,7 +727,7 @@ if __name__ == "__main__":
         except ImportError:
             pass
 
-    event_queue = []
+    event_queue = Queue.Queue()
     logic = FreeCellLogic(event_queue)
     gui = FreeCellGUI(event_queue, logic)
     if len(sys.argv) > 1:

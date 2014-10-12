@@ -14,7 +14,9 @@ from collections import namedtuple
 
 
 JoinEvent = namedtuple('JoinEvent', ['id', 'version'])
-QuitEvent = namedtuple('QuitEvent', ['id'])
+QuitEvent = namedtuple('QuitEvent', ['id', 'reason'])
+WinEvent = namedtuple('WinEvent', ['seed', 'time', 'moves', 'undos', 'won'])
+
 StopServerEvent = namedtuple('StopServerEvent', ['reason'])
 
 class CompetitionServer(object):
@@ -28,9 +30,6 @@ class CompetitionServer(object):
 
     def start(self):
         self.run_networking.set()
-        self.loop()
-
-    def loop(self):
         while self.running:
             try:
                 self.update()
@@ -48,13 +47,23 @@ class CompetitionServer(object):
 
     def handle_event(self, event):
         if isinstance(event, JoinEvent):
-            print "JOIN: %s v%.2f" % (event.id, event.version)
+            self.competitor_join(event)
 
         elif isinstance(event, QuitEvent):
-            print "QUIT: %s" % event.id
+            self.competitor_quit(event)
 
-    def competitor_quit(self, addr):
-        pass
+        elif isinstance(event, WinEvent):
+            self.competitor_win(event)
+
+    def competitor_win(self, event):
+        print "WIN: %s" % event.id
+
+    def competitor_join(self, event):
+        print "JOIN: %s v%.2f" % (event.id, event.version)
+
+    def competitor_quit(self, event):
+        print "QUIT: %s" % event.id
+        del self.competitors[event.id]
 
     def quit(self, reason):
         self.event_queue.put(StopServerEvent(reason=reason))
@@ -76,7 +85,7 @@ class FreecellCompetitor(asynchat.async_chat):
 
     def handle_close(self):
         if self.state != "disconnected":
-            self.event_queue.put(QuitEvent(id=self.id))
+            self.event_queue.put(QuitEvent(id=self.id, reason="Client disconnected"))
             self.state = "disconnected"
 
     def collect_incoming_data(self, data):

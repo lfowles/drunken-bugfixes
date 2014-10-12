@@ -23,7 +23,7 @@ MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
 
 State = namedtuple('State', ['foundations', 'cells', 'columns'])
 
-Stats = namedtuple('Stats', ['time', 'moves', 'undos'])
+Stats = namedtuple('Stats', ['seed', 'time', 'moves', 'undos', 'won'])
 
 class InvalidMove(Exception):
     pass
@@ -674,7 +674,6 @@ class FreeCellGame(object):
         self.stats = None
         self.debug = debug
 
-
     def start(self, stdscr):
         self.logic.load_seed(self.seed)
         self.gui.start(stdscr)
@@ -694,7 +693,7 @@ class FreeCellGame(object):
                 self.event_queue = [QuitEvent(won=False)]
                 self.process_event()
 
-        self.stats = Stats(time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos)
+        self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
 
     def process_event(self):
         while len(self.event_queue) > 0:
@@ -737,4 +736,8 @@ if __name__ == "__main__":
         m, s = divmod(game.stats.time, 60)
         h, m = divmod(m, 60)
         time_str = "%dh%02dm%.2fs" % (h, m, s)
-        print "seed %d, %s, %d moves, %d undos" % (seed, time_str, game.stats.moves, game.stats.undos)
+        if game.stats.won:
+            print "You win!"
+        else:
+            print "Better luck next time."
+        print "Seed %d, %s, %d moves, %d undos" % (game.stats.seed, time_str, game.stats.moves, game.stats.undos)

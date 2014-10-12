@@ -190,14 +190,9 @@ class FreeCellLogic(object):
 
         self.history = []
         self.solved = False
-        # TODO: store time in *Game
-        self.time = 0
         self.moves = 0
         self.undos = 0
-        self.num_mod = 0
         self.move_queue = []
-
-        self.undo_auto = False
 
         self.automove()
 

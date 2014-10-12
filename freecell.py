@@ -17,6 +17,7 @@ CellSelection = namedtuple('CellSelection', ['cell'])
 
 InputEvent = namedtuple('InputEvent', ['key'])
 MoveEvent = namedtuple('MoveEvent', ['source', 'dest', 'num'])
+MoveCompleteEvent = namedtuple('MoveCompleteEvent', ['unused'])
 QuitEvent = namedtuple('QuitEvent', ['won'])
 MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
 
@@ -198,12 +199,14 @@ class FreeCellLogic(object):
 
     def handle_event(self, event):
 
-        self.push_undo()
-        success = self.process_move(event)
-        if not success:
-            self.pop_undo()
+        if isinstance(event, MoveEvent):
+            self.push_undo()
+            success = self.process_move(event)
+            if not success:
+                self.pop_undo()
 
-        self.automove()
+        if isinstance(event, MoveCompleteEvent):
+            self.automove()
 
         if self.is_solved():
             self.solved = True
@@ -257,13 +260,19 @@ class FreeCellLogic(object):
             return True
 
     def automove(self):
+        found_moves = False
         for cellno, card in enumerate(self.table.free_cells):
             if card is not None and self.can_automove(card):
+                found_moves = True
                 self.event_queue.append(MoveEvent(source="T%d" % cellno, dest="F%s" % card.suite, num=1))
 
         for colno, column in enumerate(self.table.columns):
             if len(column) > 0 and self.can_automove(column[-1]):
+                found_moves = True
                 self.event_queue.append(MoveEvent(source="C%d" % colno, dest="F%s" % column[-1].suite, num=1))
+
+        if found_moves:
+            self.event_queue.append(MoveCompleteEvent(unused=''))
 
     def is_solved(self):
         for foundation in self.table.foundations.values():
@@ -288,6 +297,7 @@ class FreeCellLogic(object):
         for i in range(length):
             cell = available_cells[i]
             self.event_queue.append(MoveEvent(source=move_event.source, dest=cell, num=1))
+        self.event_queue.append(MoveCompleteEvent(unused=''))
         return True
 
     def make_supermove(self, event):
@@ -318,6 +328,7 @@ class FreeCellLogic(object):
             self.move_queue = []
             self.supermove(simple_state, stack, int(event.source[1:]), int(event.dest[1:]))
             self.event_queue.extend(self.move_queue)
+            self.event_queue.append(MoveCompleteEvent(unused=''))
         except Exception as e:
             self.event_queue.append(MessageEvent(level="error", message=str(e)))
 
@@ -562,6 +573,7 @@ class FreeCellGUI(object):
 
         move = MoveEvent(source=source, dest=dest, num=num)
         self.event_queue.append(move)
+        self.event_queue.append(MoveCompleteEvent(unused=""))
         self.selected = None
 
     def render(self):
@@ -611,10 +623,12 @@ class FreeCellGUI(object):
                 self.render_card(card, selected)
                 self.stdscr.addch(2, 2 + 5 * cellno, "wxyz"[cellno])
 
-        for foundno, stack in enumerate(self.logic.table.foundations.values()):
-            if len(stack) > 0:
+        suites = "hsdc"
+        for foundno, suite in enumerate(suites):
+            card = self.logic.table.get_card("F%s" % suite)
+            if card is not None:
                 self.stdscr.move(1, 25 + 5 * foundno)
-                self.render_card(stack[-1], False)
+                self.render_card(card, False)
 
         # Render cards
         for colno, column in enumerate(self.logic.table.columns):
@@ -688,7 +702,7 @@ class FreeCellGame(object):
 
             if isinstance(event, (InputEvent, MessageEvent)):
                 self.gui.handle_event(event)
-            elif isinstance(event, MoveEvent):
+            elif isinstance(event, (MoveEvent, MoveCompleteEvent)):
                 self.logic.handle_event(event) # .05s sleep before move UNLESS triggered by user (immediate=True, or something like that)
             elif isinstance(event, QuitEvent):
                 self.quit(event)

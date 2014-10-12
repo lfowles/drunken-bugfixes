@@ -202,6 +202,8 @@ class FreeCellLogic(object):
         if not success:
             self.pop_undo()
 
+        self.automove()
+
         if self.is_solved():
             self.solved = True
             self.event_queue.append(QuitEvent(won=True))
@@ -216,27 +218,6 @@ class FreeCellLogic(object):
 
         state = State(foundations=foundations, columns=columns, cells=free_cells)
         self.table.state = state
-
-    def find_free_cell(self):
-        for cellno, cell in enumerate(self.table.free_cells):
-            if cell is None:
-                return "T%d" % cellno
-        else:
-            return None
-
-    def move_ready(self):
-        if len(self.move_queue) > 0:
-            return True
-
-        for card in self.table.free_cells:
-            if card is not None and self.can_automove(card):
-                return True
-
-        for column in self.table.columns:
-            if len(column) > 0 and self.can_automove(column[-1]):
-                    return True
-
-        return False
 
     def can_automove(self, card):
         foundations = self.table.foundations
@@ -275,35 +256,13 @@ class FreeCellLogic(object):
             return True
 
     def automove(self):
-        if len(self.move_queue) > 0:
-            #"T1-C1"
-            move = self.move_queue.pop(0)
-            src, dest = move.split("-")
-            if src[0] == "T":
-                self.selected = CellSelection(cell=int(src[1:]))
-            elif src[0] == "C":
-                self.selected = ColumnSelection(col=int(src[1:]), range=1)
-
-            self.push_undo(auto=True)
-            if dest[0] == "T":
-                self.move_selected(cell=int(dest[1:]))
-            elif dest[0] == "C":
-                self.move_selected(column=int(dest[1:]))
-            return
-
         for cellno, card in enumerate(self.table.free_cells):
             if card is not None and self.can_automove(card):
-                self.push_undo(auto=True)
-                self.selected = CellSelection(cell=cellno)
-                self.move_selected(foundation=True)
-                return
+                self.event_queue.append(MoveEvent(source="T%d" % cellno, dest="F", num=1))
 
         for colno, column in enumerate(self.table.columns):
             if len(column) > 0 and self.can_automove(column[-1]):
-                self.push_undo(auto=True)
-                self.selected = ColumnSelection(col=colno, range=1)
-                self.move_selected(foundation=True)
-                return
+                self.event_queue.append(MoveEvent(source="C%d" % colno, dest="F", num=1))
 
     def is_solved(self):
         for foundation in self.table.foundations.values():
@@ -318,80 +277,7 @@ class FreeCellLogic(object):
         if len(self.history) > 0:
             self.table.state = self.history.pop()
 
-    def generate_supermove(self, column):
-        self.undo_auto = True
-        if column == self.selected.col:
-            return False
-
-        source_card = self.table.columns[self.selected.col][-self.selected.range]
-        if len(self.table.columns[column]) > 0 and not self.table.columns[column][-1].can_stack(source_card):
-            return False
-        supermove_selection = self.selected
-        locations = []
-        length = supermove_selection.range
-        available_cells = len([x for x in self.table.free_cells if x is None])
-        available_cols = len([x for x in self.table.columns if len(x) == 0]) # this is a lower bound
-        # if you write an exploratory algorithm, you'll be able to use columns that can fit SOME part of your stack
-        if len(self.table.columns[column]) == 0:
-            available_cols -= 1
-
-        if length > (1 + available_cells) * (1 + available_cols):
-            return False
-
-        if length <= available_cells + 1:
-            while length > 1:
-                cell = self.find_free_cell()
-                self.selected = ColumnSelection(col=supermove_selection.col, range=1)
-                self.push_undo(auto=True)
-                self.move_selected(cell=cell, store=True)
-                locations.append(("T%d" % cell, 1))
-                length -= 1
-            self.selected = ColumnSelection(col=supermove_selection.col, range=1)
-            self.push_undo(auto=True)
-            self.move_selected(column=column, store=True)
-            for location in reversed(locations):
-                if location[0].startswith("T"):
-                    cell = int(location[0][1:])
-                    self.selected = CellSelection(cell=cell)
-                    self.push_undo(auto=True)
-                    self.move_selected(column=column, store=True)
-            return True
-        else:
-            # TODO: for supermoves, scan them from the top of the range to see if there is a non-empty spot they can be moved to
-            # This will be even more efficient.
-            dest_column = column
-            max_copy = available_cells+1
-            num_supermoves = length/max_copy
-            remaining = length % max_copy
-            used_columns = [dest_column]
-            for i in range(num_supermoves):
-                self.selected = ColumnSelection(col=supermove_selection.col, range=max_copy)
-                if max_copy == 1:
-                    self.push_undo(auto=True)
-                source_card = self.table.columns[self.selected.col][-max_copy]
-                if remaining == 0 and i == num_supermoves-1:
-                    colno = dest_column
-                else:
-                    for colno, column in enumerate(self.table.columns):
-                        if colno not in used_columns \
-                            and (len(column) == 0 or column[-1].can_stack(source_card)):
-                            break
-                self.move_selected(column=colno, store=True)
-                if colno != dest_column:
-                    locations.append((("S%d") % colno, max_copy))
-                    used_columns.append(colno)
-            if remaining > 0:
-                self.selected = ColumnSelection(col=supermove_selection.col, range=remaining)
-                self.generate_supermove(dest_column)
-            for location in reversed(locations):
-                if location[0].startswith("S"):
-                    col = int(location[0][1:])
-                    self.selected = ColumnSelection(col=col, range=location[1])
-                    self.generate_supermove(dest_column)
-            return True
-
     def fill_cells(self, move_event):
-
         length = move_event.num
         available_cells = ["T%d" % cell for cell, x in enumerate(self.table.free_cells) if x is None]
 

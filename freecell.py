@@ -8,7 +8,7 @@ import time
 
 from collections import namedtuple
 
-ColumnSelection = namedtuple('ColumnSelection', ['col','range'])
+ColumnSelection = namedtuple('ColumnSelection', ['col','num'])
 CellSelection = namedtuple('CellSelection', ['cell'])
 #Seed = namedtuple('Seed', ['seed', 'timestamp', 'next'])
 #Move = namedtuple('Move', ['dest', 'auto', 'timestamp', 'previous', 'next'])
@@ -296,10 +296,8 @@ class FreeCellLogic(object):
         return True
 
     def make_supermove(self, event):
-        simple_state = {"free_cells":[],
-                        "columns":[]}
-        simple_state["free_cells"] = copy.deepcopy(self.table.free_cells)
-        simple_state["columns"] = copy.deepcopy(self.table.columns)
+        simple_state = {"free_cells": copy.deepcopy(self.table.free_cells),
+                        "columns": copy.deepcopy(self.table.columns)}
 
         max_simple_move = len([x for x in simple_state["free_cells"] if x is None]) + 1
         stack = self.table.columns[int(event.source[1:])][-event.num:]
@@ -363,7 +361,6 @@ class FreeCellLogic(object):
                     break
             else:
                 raise Exception("Failed to generate supermove. This is a bug.")
-                assert False # oh no, calculation was wrong
             state = self.supermove(state, stack[remaining:], source, free_col)
 
         # Move base of stack (base case!)
@@ -488,22 +485,22 @@ class FreeCellGUI(object):
         key = event.key
 
         # a-h Columns
-        if key >= ord('a') and key <= ord('h'):
+        if ord('a') <= key <= ord('h'):
             column = key-ord('a')
             if self.selected is None:
                 if self.range > 0:
-                    select_range = min(self.range, self.logic.contiguous_range(column))
+                    select_num = min(self.range, self.logic.contiguous_range(column))
                 else:
-                    select_range = 1
+                    select_num = 1
 
-                if select_range > 0:
-                    self.selected = ColumnSelection(col=column, range=select_range)
+                if select_num > 0:
+                    self.selected = ColumnSelection(col=column, num=select_num)
             else:
                 self.create_move("C%d" % column)
                 self.selected = None
 
         # w-z Cells
-        elif key >= ord('w') and key <= ord('z'):
+        elif ord('w') <= key <= ord('z'):
             cell = key-ord('w')
             if self.selected is None:
                 if self.logic.table.get_card("T%d" % cell) is not None:
@@ -513,7 +510,7 @@ class FreeCellGUI(object):
                 self.selected = None
 
         # 0-9 Range modifier
-        elif key >= ord('0') and key <= ord('9'):
+        elif ord('0') <= key <= ord('9'):
             self.selected = None
             new_mod = self.range * 10 + int(key-ord('0'))
             if new_mod < 100:
@@ -558,7 +555,7 @@ class FreeCellGUI(object):
 
         if isinstance(self.selected, ColumnSelection):
             source = "C%d" % self.selected.col
-            num = self.selected.range
+            num = self.selected.num
         else: # CellSelection
             source = "T%d" % self.selected.cell
             num = 1
@@ -630,11 +627,11 @@ class FreeCellGUI(object):
                        and self.selected.col == colno
 
             if selected:
-                range = self.selected.range
+                num = self.selected.num
 
             for cardno, card in enumerate(column):
                 self.stdscr.move(4 + cardno, 3 + 5 * colno)
-                self.render_card(card, selected and cardno >= (len(column) - range) )
+                self.render_card(card, selected and cardno >= (len(column) - num) )
 
     def render_card(self, card, selected):
         if selected:

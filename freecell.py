@@ -1,10 +1,15 @@
 #adapted from freecell.c http://www.linusakesson.net/software/
 
+import asynchat
+import asyncore
 import copy
 import curses
+import json
 import random
+import socket
 import sys
 import Queue
+import threading
 import time
 
 from collections import namedtuple
@@ -660,23 +665,81 @@ class FreeCellGUI(object):
         self.stdscr.addstr(str(card))
         self.stdscr.attrset(curses.A_NORMAL)
 
+# only add to event queue
+# all receiving is done by FreeCellGame acquiring the lock
+# must set source="networking" attribute
+class FreeCellNetworking(asynchat.async_chat):
+    def __init__(self, event_queue, shutdown_event, host="localhost", port=11982):
+        asynchat.async_chat.__init__(self)
+        self.event_queue = event_queue
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connect((host, port))
+        self.lock = threading.Lock()
+        self.shutdown_event = shutdown_event
+        self.state = "connecting"
+
+    def run(self):
+        self.shutdown_event.wait()
+        while self.shutdown_event.is_set():
+            with self.lock:
+                asyncore.loop(timeout=.1, count=1)
+        self.close_when_done()
+
+    def collect_incoming_data(self, data):
+        self.buffer.append(data)
+
+    def found_terminator(self):
+        message = json.loads("".join(self.buffer))
+        if "event" in message:
+            self.create_event(message)
+        else:
+            print "Non-event message received"
+
+        self.buffer = []
+
+    def handle_connect(self):
+        self.state = "connected"
+        self.event_queue.put(MessageEvent(level="networking", message="Connected"))
+        self.send_json({"event":"connect", "version": 1.2})
+
+    def handle_error(self):
+        self.event_queue.put(MessageEvent(level="networking", message="Connection Refused"))
+        self.event_queue.put(QuitEvent(won=False))
+        self.state = "refused"
+        self.close()
+
+    def send_event(self, event):
+        with self.lock:
+            # serialize events here
+            pass
+
+    def send_json(self, object):
+        self.push(json.dumps(object)+"\r\n")
+
 class FreeCellGame(object):
-    def __init__(self, event_queue, logic, gui, seed, debug):
+    def __init__(self, event_queue, logic, gui, seed, debug, networking):
         """
         :param Queue.Queue event_queue: Event Queue
         :param FreeCellLogic logic: Logic
         :param FreeCellGUI gui: GUI
         :param int seed: Seed
+        :param bool debug: Debug enabled
+        :param bool networking: Networking enabled
         """
-        self.running = True
         self.event_queue = event_queue
         self.logic = logic
         self.gui = gui
         self.seed = seed
         self.stats = None
         self.debug = debug
+        self.networking = None
+        self.shutdown_event = threading.Event()
+        if networking:
+            self.networking = FreeCellNetworking(self.event_queue, self.shutdown_event)
 
     def start(self, stdscr):
+        threading.Thread(target=self.networking.run).start()
+        self.shutdown_event.set()
         self.logic.load_seed(self.seed)
         self.gui.start(stdscr)
         self.game_loop()
@@ -685,9 +748,10 @@ class FreeCellGame(object):
         if debug:
             from pydevd import pydevd
             pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
+        # kicks off the networking
 
         self.gui.render()
-        while self.running:
+        while self.shutdown_event.is_set():
             try:
                 self.gui.get_input()
                 self.process_event()
@@ -703,6 +767,10 @@ class FreeCellGame(object):
         while not self.event_queue.empty():
             event = self.event_queue.get_nowait()
 
+            if self.networking is not None:
+                if hasattr(event, "source") and event.source != "networking":
+                    self.networking.send_event(event)
+
             if isinstance(event, (InputEvent, MessageEvent)):
                 self.gui.handle_event(event)
             elif isinstance(event, (MoveEvent, MoveCompleteEvent)):
@@ -713,19 +781,22 @@ class FreeCellGame(object):
             self.gui.render()
 
     def quit(self, event):
-        self.running = False
-
+        self.shutdown_event.clear()
 
 if __name__ == "__main__":
 
-    debug = False
-    if len(sys.argv) > 1 and sys.argv[1] == "debug":
-        try:
-            from debug import *
-            debug = True
+    debug = networking = False
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "debug":
+            try:
+                from debug import *
+                debug = True
+                sys.argv.pop(1)
+            except ImportError:
+                pass
+        elif sys.argv[1] == "network":
+            networking = True
             sys.argv.pop(1)
-        except ImportError:
-            pass
 
     event_queue = Queue.Queue()
     logic = FreeCellLogic(event_queue)
@@ -734,7 +805,7 @@ if __name__ == "__main__":
         seed = int(sys.argv[1])
     else:
         seed = random.randint(0, 0xffffffff)
-    game = FreeCellGame(event_queue, logic, gui, seed, debug)
+    game = FreeCellGame(event_queue, logic, gui, seed, debug, networking)
     curses.wrapper(game.start)
     if game.stats:
         m, s = divmod(game.stats.time, 60)

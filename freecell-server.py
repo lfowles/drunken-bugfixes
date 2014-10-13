@@ -9,6 +9,7 @@ import random
 import socket
 import string
 import threading
+import traceback
 
 from collections import namedtuple
 
@@ -60,15 +61,17 @@ class CompetitionServer(object):
 
     def competitor_join(self, event):
         print "JOIN: %s v%.2f" % (event.id, event.version)
+        self.competitors[event.id] = ""
 
     def competitor_quit(self, event):
-        print "QUIT: %s" % event.id
-        del self.competitors[event.id]
+        print "QUIT: %s %s" % (event.id, event.reason)
+        if event.id in self.competitors:
+            del self.competitors[event.id]
 
     def quit(self, reason):
         self.event_queue.put(StopServerEvent(reason=reason))
 
-class FreecellCompetitor(asynchat.async_chat):
+class FreecellConnection(asynchat.async_chat):
     def __init__(self, sock, addr, event_queue):
         """
         :param socket.socket sock: Socket
@@ -88,21 +91,30 @@ class FreecellCompetitor(asynchat.async_chat):
             self.event_queue.put(QuitEvent(id=self.id, reason="Client disconnected"))
             self.state = "disconnected"
 
+    def handle_error(self):
+        traceback.print_exc()
+
+        if self.state != "disconnected":
+            self.event_queue.put(QuitEvent(id=self.id, reason="Exception occurred"))
+            self.state = "disconnected"
+            self.close()
+
     def collect_incoming_data(self, data):
         self.buffer.append(data)
 
     def found_terminator(self):
         message = json.loads("".join(self.buffer))
+        self.buffer = []
+
         if "event" in message:
             self.create_event(message)
         else:
             print "Non-event message received"
 
-        self.buffer = []
-
     def create_event(self, message):
         if message["event"] == "connect":
-            self.event_queue.put(JoinEvent(id=self.id, version=message["event"]))
+            self.event_queue.put(JoinEvent(id=self.id, version=message["version"]))
+
             self.state = "connected"
 
 class FreecellServer(asyncore.dispatcher):
@@ -120,7 +132,7 @@ class FreecellServer(asyncore.dispatcher):
         self.listen(1)
         self.event_queue = event_queue
         self.connections = {}
-        """:type : dict[(str, int), FreecellCompetitor]"""
+        """:type : dict[(str, int), FreecellConnection]"""
         self.running = run_signal
 
     def run(self):
@@ -141,7 +153,7 @@ class FreecellServer(asyncore.dispatcher):
         pair = self.accept()
         if pair is not None:
             sock, addr = pair
-            handler = FreecellCompetitor(sock, addr, self.event_queue)
+            handler = FreecellConnection(sock, addr, self.event_queue)
             self.connections[addr] = handler
 
 if __name__ == "__main__":

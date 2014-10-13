@@ -212,7 +212,7 @@ class FreeCellLogic(object):
             self.push_undo()
             success = self.process_move(event)
             if not success:
-                self.pop_undo()
+                self.pop_undo(auto=True)
 
         if isinstance(event, MoveCompleteEvent):
             self.automove()
@@ -293,11 +293,12 @@ class FreeCellLogic(object):
         self.history.append(self.table.state)
         self.moves += 1
 
-    def pop_undo(self):
+    def pop_undo(self, auto=False):
         if len(self.history) > 0:
             self.table.state = self.history.pop()
             self.moves -= 1
-            self.undos += 1
+            if not auto:
+                self.undos += 1
 
     def fill_cells(self, move_event):
         length = move_event.num

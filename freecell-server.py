@@ -30,7 +30,7 @@ class CompetitionServer(object):
         threading.Thread(target=self.networking.run).start()
         self.running = True
         self.current_seed = random.randint(1, 0xFFFFFFFF)
-        self.current_seed = 25904
+        #self.current_seed = 25904
 
     def start(self):
         self.run_networking.set()

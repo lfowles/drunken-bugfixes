@@ -290,10 +290,13 @@ class FreeCellLogic(object):
 
     def push_undo(self):
         self.history.append(self.table.state)
+        self.moves += 1
 
     def pop_undo(self):
         if len(self.history) > 0:
             self.table.state = self.history.pop()
+            self.moves -= 1
+            self.undos += 1
 
     def fill_cells(self, move_event):
         length = move_event.num
@@ -758,6 +761,7 @@ class FreeCellGame(object):
         self.event_queue = event_queue
         self.logic = logic
         self.gui = gui
+        self.gui.set_screen("intro")
         self.stats = None
         self.debug = debug
         self.networking = None
@@ -765,6 +769,7 @@ class FreeCellGame(object):
         self.state = ""
         if networking:
             self.networking = FreeCellNetworking(self.event_queue, self.shutdown_event)
+            threading.Thread(target=self.networking.run).start()
         else:
             if seed is None:
                 self.set_seed(random.randint(0, 0xFFFFFFFF))
@@ -772,7 +777,7 @@ class FreeCellGame(object):
                 self.set_seed(seed)
 
     def start(self, stdscr):
-        threading.Thread(target=self.networking.run).start()
+
         self.shutdown_event.set()
         self.gui.start(stdscr)
         self.game_loop()
@@ -788,7 +793,6 @@ class FreeCellGame(object):
             from pydevd import pydevd
             pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
 
-        self.gui.set_screen("intro")
         self.gui.render()
         while self.shutdown_event.is_set():
             try:

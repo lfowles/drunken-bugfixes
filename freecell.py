@@ -25,7 +25,8 @@ CellSelection = namedtuple('CellSelection', ['cell'])
 InputEvent = namedtuple('InputEvent', ['key'])
 MoveEvent = namedtuple('MoveEvent', ['source', 'dest', 'num'])
 MoveCompleteEvent = namedtuple('MoveCompleteEvent', ['unused'])
-QuitEvent = namedtuple('QuitEvent', ['won'])
+FinishEvent = namedtuple('FinishEvent', ['won'])
+QuitEvent = namedtuple('QuitEvent', ['unused'])
 MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
 SeedEvent = namedtuple('SeedEvent', ['seed'])
 
@@ -218,7 +219,7 @@ class FreeCellLogic(object):
 
         if self.is_solved():
             self.solved = True
-            self.event_queue.put(QuitEvent(won=True))
+            self.event_queue.put(FinishEvent(won=True))
 
     def test_supermove(self):
         foundations = {"h":[], "s":[], "c":[], "d":[]}
@@ -497,7 +498,7 @@ class FreeCellGUI(object):
 
     def display_message(self, event):
         if self.screen == "game":
-            for i in range(10): # 5 seconds
+            for i in range(5): # 2.5 seconds
                 self.stdscr.addstr(7+self.logic.table.height(), 0, "%s: %s" % (event.level, event.message))
                 self.stdscr.refresh()
                 time.sleep(.4)
@@ -567,7 +568,7 @@ class FreeCellGUI(object):
 
         # Q quit
         elif key == ord('Q'):
-            self.event_queue.put(QuitEvent(won=False))
+            self.event_queue.put(FinishEvent(won=False))
 
         # s Load supermove test
         elif key == ord('s'):
@@ -731,7 +732,7 @@ class FreeCellNetworking(asynchat.async_chat):
         traceback.print_exc()
         time.sleep(10)
         self.event_queue.put(MessageEvent(level="networking", message="Connection Refused"))
-        self.event_queue.put(QuitEvent(won=False))
+        self.event_queue.put(QuitEvent(unused=True))
         self.state = "refused"
         self.close()
 
@@ -739,11 +740,16 @@ class FreeCellNetworking(asynchat.async_chat):
         if "event" in message:
             if message["event"] == "seed":
                 self.event_queue.put(SeedEvent(seed=message["seed"]))
+            if message["event"] == "stats":
+                if message["won"]:
+                    self.event_queue.put(MessageEvent(level="", message="Player %s has WON after %d seconds, %d moves, %d undos." % (message["id"], message["time"], message["moves"], message["undos"])))
+                else:
+                    self.event_queue.put(MessageEvent(level="", message="Player %s has conceded after %d seconds, %d moves, %d undos." % (message["id"], message["time"], message["moves"], message["undos"])))
 
     def send_event(self, event):
         with self.lock:
-            # serialize events here
-            pass
+            if isinstance(event, Stats):
+                self.send_json({'event':'stats', 'seed':event.seed, 'time':event.time, 'moves':event.moves, 'undos':event.undos, 'won':event.won})
 
     def send_json(self, object):
         self.push(json.dumps(object)+"\r\n")
@@ -801,17 +807,17 @@ class FreeCellGame(object):
             except KeyboardInterrupt:
                 while not self.event_queue.empty():
                     self.event_queue.get()
-                self.event_queue.put(QuitEvent(won=False))
+                self.event_queue.put(FinishEvent(won=False))
                 self.process_event()
-
-        self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
 
     def process_event(self):
         while not self.event_queue.empty():
             event = self.event_queue.get_nowait()
 
             if self.networking is not None:
-                if hasattr(event, "source") and event.source != "networking":
+                if hasattr(event, "origin") and event.origin != "networking":
+                    self.networking.send_event(event)
+                if isinstance(event, Stats):
                     self.networking.send_event(event)
 
             if isinstance(event, (InputEvent, MessageEvent)):
@@ -820,6 +826,10 @@ class FreeCellGame(object):
                 self.logic.handle_event(event) # .05s sleep before move UNLESS triggered by user (immediate=True, or something like that)
             elif isinstance(event, SeedEvent):
                 self.set_seed(event.seed)
+            elif isinstance(event, FinishEvent):
+                self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
+                self.event_queue.put(self.stats)
+                self.event_queue.put(QuitEvent(unused=True))
             elif isinstance(event, QuitEvent):
                 self.quit(event)
 
@@ -827,6 +837,7 @@ class FreeCellGame(object):
 
     def quit(self, event):
         self.shutdown_event.clear()
+
 
 if __name__ == "__main__":
 

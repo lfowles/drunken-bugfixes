@@ -16,7 +16,7 @@ from collections import namedtuple
 
 JoinEvent = namedtuple('JoinEvent', ['id', 'version', 'object'])
 QuitEvent = namedtuple('QuitEvent', ['id', 'reason'])
-WinEvent = namedtuple('WinEvent', ['seed', 'time', 'moves', 'undos', 'won'])
+WinEvent = namedtuple('WinEvent', ['id', 'seed', 'time', 'moves', 'undos', 'won'])
 SeedEvent = namedtuple('SeedEvent', ['seed'])
 #LeaderboardEvent
 
@@ -30,6 +30,7 @@ class CompetitionServer(object):
         threading.Thread(target=self.networking.run).start()
         self.running = True
         self.current_seed = random.randint(1, 0xFFFFFFFF)
+        self.current_seed = 25904
 
     def start(self):
         self.run_networking.set()
@@ -60,6 +61,9 @@ class CompetitionServer(object):
 
     def competitor_win(self, event):
         print "WIN: %s" % event.id
+        for competitor in self.competitors.values():
+            #WinEvent = namedtuple('WinEvent', ['id', 'seed', 'time', 'moves', 'undos', 'won'])
+            competitor.send_json({"event":"stats", "id":event.id, "seed":event.seed, "time":event.time, "moves":event.moves, "undos":event.undos, "won":event.won})
 
     def competitor_join(self, event):
         print "JOIN: %s v%.2f" % (event.id, event.version)
@@ -117,6 +121,9 @@ class FreecellConnection(asynchat.async_chat):
             self.event_queue.put(JoinEvent(id=self.id, version=message["version"], object=self))
 
             self.state = "connected"
+        elif message["event"] == "stats":
+            self.event_queue.put(WinEvent(id=self.id, seed=message["seed"], time=message["time"], moves=message["moves"], undos=message["undos"], won=message["won"]))
+            self.state = "won"
 
     def send_json(self, object):
         with self.lock:

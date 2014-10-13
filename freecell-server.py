@@ -14,12 +14,13 @@ import traceback
 from collections import namedtuple
 
 
-JoinEvent = namedtuple('JoinEvent', ['id', 'version'])
+JoinEvent = namedtuple('JoinEvent', ['id', 'version', 'object'])
 QuitEvent = namedtuple('QuitEvent', ['id', 'reason'])
 WinEvent = namedtuple('WinEvent', ['seed', 'time', 'moves', 'undos', 'won'])
+SeedEvent = namedtuple('SeedEvent', ['seed'])
+#LeaderboardEvent
 
-StopServerEvent = namedtuple('StopServerEvent', ['reason'])
-
+# last until everyone finishes seed or quits
 class CompetitionServer(object):
     def __init__(self, host, port):
         self.event_queue = Queue.Queue()
@@ -28,6 +29,7 @@ class CompetitionServer(object):
         self.networking = FreecellServer(host, port, self.event_queue, self.run_networking)
         threading.Thread(target=self.networking.run).start()
         self.running = True
+        self.current_seed = random.randint(1, 0xFFFFFFFF)
 
     def start(self):
         self.run_networking.set()
@@ -35,7 +37,7 @@ class CompetitionServer(object):
             try:
                 self.update()
             except KeyboardInterrupt:
-                self.quit("Keyboard Interrupt")
+                print "Keyboard Interrupt"
                 self.running = False
         self.run_networking.clear()
 
@@ -61,18 +63,16 @@ class CompetitionServer(object):
 
     def competitor_join(self, event):
         print "JOIN: %s v%.2f" % (event.id, event.version)
-        self.competitors[event.id] = ""
+        self.competitors[event.id] = event.object
+        event.object.send_json({"event":"seed", "seed":self.current_seed})
 
     def competitor_quit(self, event):
         print "QUIT: %s %s" % (event.id, event.reason)
         if event.id in self.competitors:
             del self.competitors[event.id]
 
-    def quit(self, reason):
-        self.event_queue.put(StopServerEvent(reason=reason))
-
 class FreecellConnection(asynchat.async_chat):
-    def __init__(self, sock, addr, event_queue):
+    def __init__(self, sock, addr, event_queue, lock):
         """
         :param socket.socket sock: Socket
         :param (str, int) addr: Address
@@ -85,6 +85,7 @@ class FreecellConnection(asynchat.async_chat):
         self.id = ''.join(random.choice(string.ascii_uppercase + string.digits) for x in range(8))
         self.buffer = []
         self.state = "connecting"
+        self.lock = lock
 
     def handle_close(self):
         if self.state != "disconnected":
@@ -113,9 +114,13 @@ class FreecellConnection(asynchat.async_chat):
 
     def create_event(self, message):
         if message["event"] == "connect":
-            self.event_queue.put(JoinEvent(id=self.id, version=message["version"]))
+            self.event_queue.put(JoinEvent(id=self.id, version=message["version"], object=self))
 
             self.state = "connected"
+
+    def send_json(self, object):
+        with self.lock:
+            self.push(json.dumps(object)+"\r\n")
 
 class FreecellServer(asyncore.dispatcher):
     def __init__(self, host, port, event_queue, run_signal):
@@ -134,12 +139,14 @@ class FreecellServer(asyncore.dispatcher):
         self.connections = {}
         """:type : dict[(str, int), FreecellConnection]"""
         self.running = run_signal
+        self.lock = threading.Lock()
 
     def run(self):
         self.running.wait()
         while self.running.is_set():
-            asyncore.loop(timeout=1, count=1)
-            self.update_connections()
+            with self.lock:
+                asyncore.loop(timeout=.1, count=1)
+                self.update_connections()
 
         for connection in self.connections.values():
             connection.close_when_done()
@@ -153,10 +160,9 @@ class FreecellServer(asyncore.dispatcher):
         pair = self.accept()
         if pair is not None:
             sock, addr = pair
-            handler = FreecellConnection(sock, addr, self.event_queue)
+            handler = FreecellConnection(sock, addr, self.event_queue, self.lock)
             self.connections[addr] = handler
 
 if __name__ == "__main__":
     competition_server = CompetitionServer(HOST, PORT)
     competition_server.start()
-

@@ -11,6 +11,7 @@ import sys
 import Queue
 import threading
 import time
+import traceback
 
 from collections import namedtuple
 
@@ -26,6 +27,7 @@ MoveEvent = namedtuple('MoveEvent', ['source', 'dest', 'num'])
 MoveCompleteEvent = namedtuple('MoveCompleteEvent', ['unused'])
 QuitEvent = namedtuple('QuitEvent', ['won'])
 MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
+SeedEvent = namedtuple('SeedEvent', ['seed'])
 
 State = namedtuple('State', ['foundations', 'cells', 'columns'])
 
@@ -459,6 +461,11 @@ class FreeCellGUI(object):
         self.select_num = 0
         """:type : int"""
 
+        self.screens = {
+            "intro": self.render_intro,
+            "game": self.render_game,
+                        }
+
     def start(self, stdscr):
         self.stdscr = stdscr
         curses.curs_set(0)
@@ -482,16 +489,20 @@ class FreeCellGUI(object):
         elif isinstance(event, MessageEvent):
             self.display_message(event)
 
-    def display_message(self, event):
-        for i in range(10): # 5 seconds
-            self.stdscr.addstr(7+self.logic.table.height(), 0, "%s: %s" % (event.level, event.message))
-            self.stdscr.refresh()
-            time.sleep(.4)
-            self.stdscr.deleteln()
-            self.stdscr.refresh()
-            time.sleep(.1)
+    def set_screen(self, screen):
+        self.screen = screen
 
-        self.stdscr.move(5 + self.logic.table.height(), 43)
+    def display_message(self, event):
+        if self.screen == "game":
+            for i in range(10): # 5 seconds
+                self.stdscr.addstr(7+self.logic.table.height(), 0, "%s: %s" % (event.level, event.message))
+                self.stdscr.refresh()
+                time.sleep(.4)
+                self.stdscr.deleteln()
+                self.stdscr.refresh()
+                time.sleep(.1)
+
+            self.stdscr.move(5 + self.logic.table.height(), 43)
 
     def handle_input(self, event):
         reset_num = True
@@ -584,6 +595,15 @@ class FreeCellGUI(object):
         self.selected = None
 
     def render(self):
+        self.screens[self.screen]()
+
+    def render_intro(self):
+        self.stdscr.erase()
+        self.stdscr.addstr(0, 0, "Welcome to FREECELL")
+        self.stdscr.addstr(1, 0, "Loading seed....")
+        self.stdscr.refresh()
+
+    def render_game(self):
         self.render_base()
         self.render_cards()
         self.stdscr.refresh()
@@ -672,6 +692,8 @@ class FreeCellNetworking(asynchat.async_chat):
     def __init__(self, event_queue, shutdown_event, host="localhost", port=11982):
         asynchat.async_chat.__init__(self)
         self.event_queue = event_queue
+        self.set_terminator("\r\n")
+        self.buffer = []
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connect((host, port))
         self.lock = threading.Lock()
@@ -703,10 +725,17 @@ class FreeCellNetworking(asynchat.async_chat):
         self.send_json({"event":"connect", "version": 1.2})
 
     def handle_error(self):
+        traceback.print_exc()
+        time.sleep(10)
         self.event_queue.put(MessageEvent(level="networking", message="Connection Refused"))
         self.event_queue.put(QuitEvent(won=False))
         self.state = "refused"
         self.close()
+
+    def create_event(self, message):
+        if "event" in message:
+            if message["event"] == "seed":
+                self.event_queue.put(SeedEvent(seed=message["seed"]))
 
     def send_event(self, event):
         with self.lock:
@@ -717,7 +746,7 @@ class FreeCellNetworking(asynchat.async_chat):
         self.push(json.dumps(object)+"\r\n")
 
 class FreeCellGame(object):
-    def __init__(self, event_queue, logic, gui, seed, debug, networking):
+    def __init__(self, event_queue, logic, gui, seed=None, debug=False, networking=False):
         """
         :param Queue.Queue event_queue: Event Queue
         :param FreeCellLogic logic: Logic
@@ -729,27 +758,37 @@ class FreeCellGame(object):
         self.event_queue = event_queue
         self.logic = logic
         self.gui = gui
-        self.seed = seed
         self.stats = None
         self.debug = debug
         self.networking = None
         self.shutdown_event = threading.Event()
+        self.state = ""
         if networking:
             self.networking = FreeCellNetworking(self.event_queue, self.shutdown_event)
+        else:
+            if seed is None:
+                self.set_seed(random.randint(0, 0xFFFFFFFF))
+            else:
+                self.set_seed(seed)
 
     def start(self, stdscr):
         threading.Thread(target=self.networking.run).start()
         self.shutdown_event.set()
-        self.logic.load_seed(self.seed)
         self.gui.start(stdscr)
         self.game_loop()
+
+    def set_seed(self, seed):
+        self.state = "seeded"
+        self.seed = seed
+        self.logic.load_seed(self.seed)
+        self.gui.set_screen("game")
 
     def game_loop(self):
         if debug:
             from pydevd import pydevd
             pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
-        # kicks off the networking
 
+        self.gui.set_screen("intro")
         self.gui.render()
         while self.shutdown_event.is_set():
             try:
@@ -775,6 +814,8 @@ class FreeCellGame(object):
                 self.gui.handle_event(event)
             elif isinstance(event, (MoveEvent, MoveCompleteEvent)):
                 self.logic.handle_event(event) # .05s sleep before move UNLESS triggered by user (immediate=True, or something like that)
+            elif isinstance(event, SeedEvent):
+                self.set_seed(event.seed)
             elif isinstance(event, QuitEvent):
                 self.quit(event)
 
@@ -801,10 +842,11 @@ if __name__ == "__main__":
     event_queue = Queue.Queue()
     logic = FreeCellLogic(event_queue)
     gui = FreeCellGUI(event_queue, logic)
-    if len(sys.argv) > 1:
-        seed = int(sys.argv[1])
-    else:
-        seed = random.randint(0, 0xffffffff)
+    seed = None
+    if not networking:
+        if len(sys.argv) > 1:
+            seed = int(sys.argv[1])
+
     game = FreeCellGame(event_queue, logic, gui, seed, debug, networking)
     curses.wrapper(game.start)
     if game.stats:

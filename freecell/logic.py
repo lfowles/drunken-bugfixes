@@ -1,3 +1,4 @@
+import copy
 import time
 
 from board import Tableau, Deck, Card, State

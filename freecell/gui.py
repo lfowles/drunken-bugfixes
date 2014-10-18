@@ -77,7 +77,10 @@ class HelpGUI(GUIState):
 
         self.help_text = [
             ("""This is the first window\n"""
-             """Put some text here""")
+             """Put some text here"""),
+            ("""This is the second window\n"""
+             """More text goes here\n"""
+             """And some more here""")
         ]
 
     def set_window(self, window):

@@ -57,8 +57,20 @@ class FreeCellGame(object):
         self.logic.load_seed(self.seed)
         self.gui.set_screen("game")
 
+    def display_help(self):
+        width = 38
+        height = 7
+        y = 4
+        x = 3
+        import curses
+        win = curses.newwin(height, width, y, x)
+        self.gui.set_screen("help")
+        self.gui.screens[self.gui.screen].set_window(win)
+
+
     def game_loop(self):
         self.gui.render()
+
         while self.shutdown_event.is_set():
             try:
                 self.input.get_input()
@@ -80,6 +92,9 @@ class FreeCellGame(object):
                     self.networking.send_event(event)
 
             if isinstance(event, (InputEvent, MessageEvent)):
+                if isinstance(event, InputEvent):
+                    if event.key == ord('?'):
+                        self.display_help()
                 self.gui.handle_event(event)
             elif isinstance(event, (MoveEvent, MoveCompleteEvent)):
                 self.logic.handle_event(event) # .05s sleep before move UNLESS triggered by user (immediate=True, or something like that)

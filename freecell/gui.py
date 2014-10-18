@@ -22,6 +22,7 @@ class FreeCellGUI(object):
         self.stdscr = stdscr
         self.screens["intro"] = LoadGUI(self.stdscr, self.event_queue)
         self.screens["game"] = GameGUI(self.stdscr, self.event_queue, self.logic)
+        self.screens["help"] = HelpGUI(self.stdscr, self.event_queue)
 
         curses.curs_set(0)
         curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
@@ -70,7 +71,38 @@ class LoadGUI(GUIState):
         self.window.refresh()
 
 class HelpGUI(GUIState):
-    pass
+    def __init__(self, window, event_queue):
+        GUIState.__init__(self, window, event_queue)
+        self.page_num = 0
+
+        self.help_text = [
+            ("""This is the first window\n"""
+             """Put some text here""")
+        ]
+
+    def set_window(self, window):
+        self.window = window
+
+    def handle_event(self, event):
+        if event.key == ord(' '):
+            self.page_num += 1
+
+    def render(self):
+
+        self.window.erase()
+        self.window.border('|','|','-','-','/','\\','\\','/')
+
+        self.display_page(self.page_num)
+        self.window.refresh()
+
+    def display_page(self, page_num):
+        if page_num < len(self.help_text):
+            pos = 1
+            for line in self.help_text[page_num].split("\n"):
+                self.window.addstr(pos, 1, line)
+                pos += 1
+        else:
+            self.window.addstr(1, 1, "Out of help!")
 
 class GameGUI(GUIState):
     def __init__(self, window, event_queue, logic):

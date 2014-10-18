@@ -241,8 +241,23 @@ class FreeCellLogic(object):
         dest_card = self.table.get_card(move_event.dest)
 
         if move_event.dest.startswith("C"):
-            if dest_card is None or dest_card.can_stack(card):
+
+            if dest_card is None: # Going to an empty column is always valid
                 valid = True
+            else:
+                # Go ahead and move if this is valid
+                if dest_card.can_stack(card):
+                    valid = True
+                else:
+                    # Find the greatest range of cards that can fit on top of the destination card
+                    range_cards = self.contiguous_range(int(move_event.source[1:]))
+                    counter = 0
+                    for src_card in range_cards:
+                        counter += 1
+                        if dest_card.can_stack(src_card):
+                            self.event_queue.put(MoveEvent(source=move_event.source, dest=move_event.dest, num=counter))
+                    valid=False
+
         elif move_event.dest.startswith("T"):
             if dest_card is None:
                 valid = True
@@ -257,6 +272,7 @@ class FreeCellLogic(object):
         if valid:
             self.table.move(move_event.source, move_event.dest)
             time.sleep(.1)
+
         return valid
 
     def contiguous_range(self, column):
@@ -271,4 +287,5 @@ class FreeCellLogic(object):
             lower_card = card
             chain_size += 1
 
-        return chain_size
+        return list(reversed(self.table.columns[column]))[:chain_size]
+

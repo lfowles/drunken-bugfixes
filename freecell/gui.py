@@ -74,7 +74,7 @@ class FreeCellGUI(object):
             column = key-ord('a')
             if self.selected is None:
                 if self.select_num > 0:
-                    select_num = min(self.select_num, self.logic.contiguous_range(column))
+                    select_num = min(self.select_num, len(self.logic.contiguous_range(column)))
                 else:
                     select_num = 1
 

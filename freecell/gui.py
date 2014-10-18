@@ -1,6 +1,8 @@
 import curses
 import time
 
+import events
+
 from collections import namedtuple
 from events import *
 
@@ -8,21 +10,22 @@ ColumnSelection = namedtuple('ColumnSelection', ['col','num'])
 CellSelection = namedtuple('CellSelection', ['cell'])
 
 class FreeCellGUI(object):
-    def __init__(self, event_queue, logic):
+    def __init__(self, logic):
         """
         :param Queue.Queue event_queue: Event Queue
         :param FreeCellLogic logic: Logic
         """
         self.logic = logic
-        self.event_queue = event_queue
+        self.event_dispatch = events.event_dispatch
 
         self.screens = {}
+        self.screen = "intro"
 
     def start(self, stdscr):
         self.stdscr = stdscr
-        self.screens["intro"] = LoadGUI(self.stdscr, self.event_queue)
-        self.screens["game"] = GameGUI(self.stdscr, self.event_queue, self.logic)
-        self.screens["help"] = HelpGUI(self.stdscr, self.event_queue)
+        self.screens["intro"] = LoadGUI(self.stdscr)
+        self.screens["game"] = GameGUI(self.stdscr, self.logic)
+        self.screens["help"] = HelpGUI(self.stdscr,)
 
         curses.curs_set(0)
         curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
@@ -41,25 +44,26 @@ class FreeCellGUI(object):
         curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_GREEN)
         curses.init_pair(8, curses.COLOR_CYAN, curses.COLOR_GREEN)
 
-
-    def handle_event(self, event):
-        self.screens[self.screen].handle_event(event)
-
     def set_screen(self, screen):
+        self.screens[self.screen].unload()
         self.screen = screen
+        self.screens[self.screen].load()
 
     def render(self):
         self.screens[self.screen].render()
 
 class GUIState(object):
-    def __init__(self, window, event_queue):
+    def __init__(self, window):
         self.window = window
-        self.event_queue = event_queue
+        self.event_dispatch = events.event_dispatch
 
     def render(self):
         pass
 
-    def handle_event(self, event):
+    def load(self):
+        pass
+
+    def unload(self):
         pass
 
 class LoadGUI(GUIState):
@@ -71,8 +75,8 @@ class LoadGUI(GUIState):
         self.window.refresh()
 
 class HelpGUI(GUIState):
-    def __init__(self, window, event_queue):
-        GUIState.__init__(self, window, event_queue)
+    def __init__(self, window):
+        GUIState.__init__(self, window)
         self.page_num = 0
 
         self.help_text = [
@@ -83,10 +87,16 @@ class HelpGUI(GUIState):
              """And some more here""")
         ]
 
+    def load(self):
+        self.event_dispatch.register(self.handle_input, ["InputEvent"])
+
+    def unload(self):
+        self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
+
     def set_window(self, window):
         self.window = window
 
-    def handle_event(self, event):
+    def handle_input(self, event):
         if event.key == ord(' '):
             self.page_num += 1
 
@@ -108,8 +118,8 @@ class HelpGUI(GUIState):
             self.window.addstr(1, 1, "Out of help!")
 
 class GameGUI(GUIState):
-    def __init__(self, window, event_queue, logic):
-        GUIState.__init__(self, window, event_queue)
+    def __init__(self, window, logic):
+        GUIState.__init__(self, window)
         self.logic = logic
         self.face_dir = 1
 
@@ -119,12 +129,13 @@ class GameGUI(GUIState):
         self.select_num = 0
         """:type : int"""
 
-    def handle_event(self, event):
-        if isinstance(event, InputEvent):
-            self.handle_input(event)
-        elif isinstance(event, MessageEvent):
-            self.display_message(event)
+    def load(self):
+        self.event_dispatch.register(self.handle_input, ["InputEvent"])
+        self.event_dispatch.register(self.display_message, ["MessageEvent"])
 
+    def unload(self):
+        self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
+        self.event_dispatch.unregister(self.display_message, ["MessageEvent"])
 
     def render(self):
         self.render_base()
@@ -277,10 +288,6 @@ class GameGUI(GUIState):
         elif key == 27:
             self.selected = None
 
-        # Q quit
-        elif key == ord('Q'):
-            self.event_queue.put(FinishEvent(won=False))
-
         if reset_num:
             self.select_num = 0
 
@@ -300,8 +307,8 @@ class GameGUI(GUIState):
             dest = "F%s" % card.suite
 
         move = MoveEvent(source=source, dest=dest, num=num)
-        self.event_queue.put(move)
-        self.event_queue.put(MoveCompleteEvent(unused=""))
+        self.event_dispatch.send(move)
+        self.event_dispatch.send(MoveCompleteEvent(unused=""))
         self.selected = None
 
     def display_message(self, event):

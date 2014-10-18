@@ -3,6 +3,7 @@ import random
 import threading
 import time
 
+import events
 from events import *
 
 from gui import FreeCellGUI
@@ -20,25 +21,22 @@ class FreeCellGame(object):
         :param bool debug: Debug enabled
         :param bool networking: Networking enabled
         """
-        self.event_queue = Queue.Queue()
-        self.logic = FreeCellLogic(self.event_queue)
-        self.gui = FreeCellGUI(self.event_queue, self.logic)
-        self.input = CursesInput(self.event_queue)
+        self.event_dispatch = events.event_dispatch
+        self.logic = FreeCellLogic()
+        self.gui = FreeCellGUI(self.logic)
+        self.input = CursesInput()
 
-        self.gui.set_screen("intro")
         self.stats = None
         self.debug = debug
         self.networking = None
         self.shutdown_event = threading.Event()
         self.state = ""
         if networking:
-            self.networking = FreeCellNetworking(self.event_queue, self.shutdown_event)
+            self.networking = FreeCellNetworking(self.shutdown_event)
             threading.Thread(target=self.networking.run).start()
         else:
-            if seed is None:
-                self.set_seed(random.randint(0, 0xFFFFFFFF))
-            else:
-                self.set_seed(seed)
+            event = SeedEvent(seed=seed or random.randint(0, 0xFFFFFFFF))
+            self.event_dispatch.send(event)
 
     def start(self, stdscr):
         if self.debug:
@@ -46,27 +44,35 @@ class FreeCellGame(object):
             from debug import DEBUG_HOST, DEBUG_PORT
             pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
 
+        self.event_dispatch.register(self.finish, ["FinishEvent"])
+        self.event_dispatch.register(self.quit, ["QuitEvent"])
+        self.event_dispatch.register(self.set_seed, ["SeedEvent"])
+        self.event_dispatch.register(self.handle_input, ["InputEvent"])
+
         self.shutdown_event.set()
+        self.logic.start()
         self.input.start(stdscr)
         self.gui.start(stdscr)
         self.game_loop()
 
-    def set_seed(self, seed):
+    def set_seed(self, event):
         self.state = "seeded"
-        self.seed = seed
+        self.seed = event.seed
         self.logic.load_seed(self.seed)
         self.gui.set_screen("game")
 
-    def display_help(self):
-        width = 38
-        height = 7
-        y = 4
-        x = 3
-        import curses
-        win = curses.newwin(height, width, y, x)
-        self.gui.set_screen("help")
-        self.gui.screens[self.gui.screen].set_window(win)
-
+    def handle_input(self, event):
+        if event.key == ord('?'):
+            width = 38
+            height = 7
+            y = 4
+            x = 3
+            import curses
+            win = curses.newwin(height, width, y, x)
+            self.gui.set_screen("help")
+            self.gui.screens[self.gui.screen].set_window(win)
+        elif event.key == ord('Q'):
+            self.event_dispatch.send(FinishEvent(won=False))
 
     def game_loop(self):
         self.gui.render()
@@ -74,16 +80,12 @@ class FreeCellGame(object):
         while self.shutdown_event.is_set():
             try:
                 self.input.get_input()
-                self.process_event()
+                self.gui.render()
+                self.event_dispatch.update(.1)
             except KeyboardInterrupt:
-                while not self.event_queue.empty():
-                    self.event_queue.get()
-                self.event_queue.put(FinishEvent(won=False))
-                self.process_event()
+                self.event_dispatch.send(FinishEvent(won=False), priority=1)
 
     def process_event(self):
-        while not self.event_queue.empty():
-            event = self.event_queue.get_nowait()
 
             if self.networking is not None:
                 if hasattr(event, "origin") and event.origin != "networking":
@@ -91,23 +93,10 @@ class FreeCellGame(object):
                 if isinstance(event, Stats):
                     self.networking.send_event(event)
 
-            if isinstance(event, (InputEvent, MessageEvent)):
-                if isinstance(event, InputEvent):
-                    if event.key == ord('?'):
-                        self.display_help()
-                self.gui.handle_event(event)
-            elif isinstance(event, (MoveEvent, MoveCompleteEvent)):
-                self.logic.handle_event(event) # .05s sleep before move UNLESS triggered by user (immediate=True, or something like that)
-            elif isinstance(event, SeedEvent):
-                self.set_seed(event.seed)
-            elif isinstance(event, FinishEvent):
-                self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
-                self.event_queue.put(self.stats)
-                self.event_queue.put(QuitEvent(unused=True))
-            elif isinstance(event, QuitEvent):
-                self.quit(event)
-
-            self.gui.render()
+    def finish(self, event):
+        self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
+        self.event_dispatch.send(self.stats)
+        self.event_dispatch.send(QuitEvent(unused=True))
 
     def quit(self, event):
         self.shutdown_event.clear()

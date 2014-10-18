@@ -1,17 +1,23 @@
 import copy
 import time
 
+import events
+
 from board import Tableau, Deck
 from events import *
 
 class FreeCellLogic(object):
-    def __init__(self, event_queue):
+    def __init__(self):
         """
         :param Queue.Queue event_queue: Event Queue
         """
         self.deck = Deck()
         self.table = Tableau()
-        self.event_queue = event_queue
+        self.event_dispatch = events.event_dispatch
+
+    def start(self):
+        self.event_dispatch.register(self.process_move, ["MoveEvent"])
+        self.event_dispatch.register(self.automove, ["MoveCompleteEvent"])
 
     def load_seed(self, seed):
         self.seed = seed
@@ -27,21 +33,6 @@ class FreeCellLogic(object):
         self.move_queue = []
 
         self.automove()
-
-    def handle_event(self, event):
-
-        if isinstance(event, MoveEvent):
-            self.push_undo()
-            success = self.process_move(event)
-            if not success:
-                self.pop_undo(auto=True)
-
-        if isinstance(event, MoveCompleteEvent):
-            self.automove()
-
-        if self.is_solved():
-            self.solved = True
-            self.event_queue.put(FinishEvent(won=True))
 
     def can_automove(self, card):
         foundations = self.table.foundations
@@ -79,20 +70,20 @@ class FreeCellLogic(object):
             and sv >= card.value - 3:
             return True
 
-    def automove(self):
+    def automove(self, event=None):
         found_moves = False
         for cellno, card in enumerate(self.table.free_cells):
             if card is not None and self.can_automove(card):
                 found_moves = True
-                self.event_queue.put(MoveEvent(source="T%d" % cellno, dest="F%s" % card.suite, num=1))
+                self.event_dispatch.send(MoveEvent(source="T%d" % cellno, dest="F%s" % card.suite, num=1))
 
         for colno, column in enumerate(self.table.columns):
             if len(column) > 0 and self.can_automove(column[-1]):
                 found_moves = True
-                self.event_queue.put(MoveEvent(source="C%d" % colno, dest="F%s" % column[-1].suite, num=1))
+                self.event_dispatch.send(MoveEvent(source="C%d" % colno, dest="F%s" % column[-1].suite, num=1))
 
         if found_moves:
-            self.event_queue.put(MoveCompleteEvent(unused=''))
+            self.event_dispatch.send(MoveCompleteEvent(unused=''))
 
     def is_solved(self):
         for foundation in self.table.foundations.values():
@@ -120,8 +111,8 @@ class FreeCellLogic(object):
 
         for i in range(length):
             cell = available_cells[i]
-            self.event_queue.put(MoveEvent(source=move_event.source, dest=cell, num=1))
-        self.event_queue.put(MoveCompleteEvent(unused=''))
+            self.event_dispatch.send(MoveEvent(source=move_event.source, dest=cell, num=1))
+        self.event_dispatch.send(MoveCompleteEvent(unused=''))
         return True
 
     def make_supermove(self, event):
@@ -152,10 +143,10 @@ class FreeCellLogic(object):
             self.move_queue = []
             self.supermove(simple_state, stack, int(event.source[1:]), int(event.dest[1:]))
             for move in self.move_queue:
-                self.event_queue.put(move)
-            self.event_queue.put(MoveCompleteEvent(unused=''))
+                self.event_dispatch.send(move)
+            self.event_dispatch.send(MoveCompleteEvent(unused=''))
         except Exception as e:
-            self.event_queue.put(MessageEvent(level="error", message=str(e)))
+            self.event_dispatch.send(MessageEvent(level="error", message=str(e)))
 
     def simple_supermove(self, state, stack, source, dest):
         state = copy.deepcopy(state)
@@ -208,6 +199,8 @@ class FreeCellLogic(object):
         :param MoveEvent move_event: Move Event
         :rtype: bool
         """
+        self.push_undo()
+
         if move_event.dest == "T":
             return self.fill_cells(move_event)
 
@@ -244,7 +237,7 @@ class FreeCellLogic(object):
                     for src_card in range_cards:
                         counter += 1
                         if dest_card.can_stack(src_card):
-                            self.event_queue.put(MoveEvent(source=move_event.source, dest=move_event.dest, num=counter))
+                            self.event_dispatch.send(MoveEvent(source=move_event.source, dest=move_event.dest, num=counter))
                     valid=False
 
         elif move_event.dest.startswith("T"):
@@ -260,7 +253,12 @@ class FreeCellLogic(object):
 
         if valid:
             self.table.move(move_event.source, move_event.dest)
+            if self.is_solved():
+                self.solved = True
+                self.event_dispatch.send(FinishEvent(won=True))
             time.sleep(.1)
+        else:
+            self.pop_undo(auto=True)
 
         return valid
 

@@ -16,19 +16,13 @@ class FreeCellGUI(object):
         self.logic = logic
         self.event_queue = event_queue
 
-        # for selection
-        self.selected = None
-        """:type : CellSelection | ColumnSelection | None"""
-        self.select_num = 0
-        """:type : int"""
-
-        self.screens = {
-            "intro": self.render_intro,
-            "game": self.render_game,
-                        }
+        self.screens = {}
 
     def start(self, stdscr):
         self.stdscr = stdscr
+        self.screens["intro"] = LoadGUI(self.stdscr, self.event_queue)
+        self.screens["game"] = GameGUI(self.stdscr, self.event_queue, self.logic)
+
         curses.curs_set(0)
         curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
 
@@ -46,14 +40,49 @@ class FreeCellGUI(object):
         curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_GREEN)
         curses.init_pair(8, curses.COLOR_CYAN, curses.COLOR_GREEN)
 
-        curses.halfdelay(2)
 
+    def handle_event(self, event):
+        self.screens[self.screen].handle_event(event)
+
+    def set_screen(self, screen):
+        self.screen = screen
+
+    def render(self):
+        self.screens[self.screen].render()
+
+class GUIState(object):
+    def __init__(self, window, event_queue):
+        self.window = window
+        self.event_queue = event_queue
+
+    def render(self):
+        pass
+
+    def handle_event(self, event):
+        pass
+
+class LoadGUI(GUIState):
+
+    def render(self):
+        self.window.erase()
+        self.window.addstr(0, 0, "Welcome to FREECELL")
+        self.window.addstr(1, 0, "Loading seed....")
+        self.window.refresh()
+
+class HelpGUI(GUIState):
+    pass
+
+class GameGUI(GUIState):
+    def __init__(self, window, event_queue, logic):
+        GUIState.__init__(self, window, event_queue)
+        self.logic = logic
         self.face_dir = 1
 
-    def get_input(self):
-        key = self.stdscr.getch()
-        if key != curses.ERR:
-            self.event_queue.put(InputEvent(key=key))
+        # for selection
+        self.selected = None
+        """:type : CellSelection | ColumnSelection | None"""
+        self.select_num = 0
+        """:type : int"""
 
     def handle_event(self, event):
         if isinstance(event, InputEvent):
@@ -61,20 +90,99 @@ class FreeCellGUI(object):
         elif isinstance(event, MessageEvent):
             self.display_message(event)
 
-    def set_screen(self, screen):
-        self.screen = screen
 
-    def display_message(self, event):
-        if self.screen == "game":
-            for i in range(5): # 2.5 seconds
-                self.stdscr.addstr(7+self.logic.table.height(), 0, "%s: %s" % (event.level, event.message))
-                self.stdscr.refresh()
-                time.sleep(.4)
-                self.stdscr.deleteln()
-                self.stdscr.refresh()
-                time.sleep(.1)
+    def render(self):
+        self.render_base()
+        self.render_cards()
+        self.window.refresh()
+        self.window.move(5 + self.logic.table.height(), 43)
 
-            self.stdscr.move(5 + self.logic.table.height(), 43)
+    def render_base(self):
+        self.window.erase()
+        self.window.addstr(0, 0, "space                                  enter")
+        seed_str = "#%d" % self.logic.seed
+        self.window.addstr(0, 22-len(seed_str)/2, seed_str)
+        self.window.addstr(1, 0, "[   ][   ][   ][   ]    [   ][   ][   ][   ]")
+        if self.select_num > 0:
+            self.window.addstr(1, 21, str(self.select_num))
+        else:
+            if isinstance(self.selected, ColumnSelection):
+                if self.selected.col < 4:
+                    self.face_dir = 0
+                else:
+                    self.face_dir = 1
+            self.window.attrset(curses.A_BOLD | curses.color_pair(4))
+            self.window.addstr(1, 21, ("(=", "=)")[self.face_dir])
+            self.window.attrset(curses.A_NORMAL)
+        height = self.logic.table.height()
+
+        self.window.addstr(5 + height, 0, "    a    b    c    d    e    f    g    h")
+        statusline = "%d move%s, %d undo%s" % (self.logic.moves, ["s",""][self.logic.moves == 1],
+                                        self.logic.undos, ["s", ""][self.logic.undos == 1])
+        self.window.addstr(6 + height, 44 - len(statusline), statusline)
+        self.window.addstr(6 + height, 0, "Quit undo ?=help")
+        self.window.attrset(curses.color_pair(1))
+        self.window.addch(6 + height, 0, 'Q')
+        self.window.addch(6 + height, 5, 'u')
+        self.window.addch(6 + height, 10, '?')
+        self.window.attrset(curses.A_NORMAL)
+
+    def render_cards(self):
+        # Cells
+        for cellno, card in enumerate(self.logic.table.free_cells):
+            if card is not None:
+                selected = isinstance(self.selected, CellSelection) \
+                           and self.selected.cell == cellno
+
+                self.window.move(1, 1 + 5 *cellno)
+                self.render_card(card, selected)
+                self.window.addch(2, 2 + 5 * cellno, "wxyz"[cellno])
+
+        suites = "hsdc"
+        for foundno, suite in enumerate(suites):
+            card = self.logic.table.get_card("F%s" % suite)
+            if card is not None:
+                self.window.move(1, 25 + 5 * foundno)
+                self.render_card(card)
+
+        # Render cards
+        for colno, column in enumerate(self.logic.table.columns):
+            selected = isinstance(self.selected, ColumnSelection) \
+                       and self.selected.col == colno
+
+            if selected:
+                num = self.selected.num
+
+            if len(column) > 0 and len(column) == len(self.logic.contiguous_range(colno)):
+                self.window.move(3, 3 + 5 * colno)
+                self.window.attrset(curses.color_pair(7))
+                self.window.addstr("   ")
+                self.window.attrset(curses.A_NORMAL)
+
+            for cardno, card in enumerate(column):
+                self.window.move(4 + cardno, 3 + 5 * colno)
+                will_move = self.logic.can_automove(card)
+                self.render_card(card, selected and cardno >= (len(column) - num), will_move)
+
+    def render_card(self, card, selected=False, will_move=False):
+        #Precedence is selected > automove > default
+
+        if card.color == "r":
+            color_pair = curses.color_pair(1)
+        else:
+            color_pair = curses.A_NORMAL
+
+        if selected:
+            if card.color == "r":
+                color_pair = curses.color_pair(3)
+            else:
+                color_pair = curses.color_pair(2)
+
+        self.window.attrset(color_pair)
+        if will_move:
+            self.window.attron(curses.A_BOLD)
+        self.window.addstr(str(card))
+        self.window.attrset(curses.A_NORMAL)
 
     def handle_input(self, event):
         reset_num = True
@@ -161,104 +269,13 @@ class FreeCellGUI(object):
         self.event_queue.put(MoveCompleteEvent(unused=""))
         self.selected = None
 
-    def render(self):
-        self.screens[self.screen]()
+    def display_message(self, event):
+        for i in range(5): # 2.5 seconds
+            self.window.addstr(7+self.logic.table.height(), 0, "%s: %s" % (event.level, event.message))
+            self.window.refresh()
+            time.sleep(.4)
+            self.window.deleteln()
+            self.window.refresh()
+            time.sleep(.1)
 
-    def render_intro(self):
-        self.stdscr.erase()
-        self.stdscr.addstr(0, 0, "Welcome to FREECELL")
-        self.stdscr.addstr(1, 0, "Loading seed....")
-        self.stdscr.refresh()
-
-    def render_game(self):
-        self.render_base()
-        self.render_cards()
-        self.stdscr.refresh()
-        self.stdscr.move(5 + self.logic.table.height(), 43)
-
-    def render_base(self):
-        self.stdscr.erase()
-        self.stdscr.addstr(0, 0, "space                                  enter")
-        seed_str = "#%d" % self.logic.seed
-        self.stdscr.addstr(0, 22-len(seed_str)/2, seed_str)
-        self.stdscr.addstr(1, 0, "[   ][   ][   ][   ]    [   ][   ][   ][   ]")
-        if self.select_num > 0:
-            self.stdscr.addstr(1, 21, str(self.select_num))
-        else:
-            if isinstance(self.selected, ColumnSelection):
-                if self.selected.col < 4:
-                    self.face_dir = 0
-                else:
-                    self.face_dir = 1
-            self.stdscr.attrset(curses.A_BOLD | curses.color_pair(4))
-            self.stdscr.addstr(1, 21, ("(=", "=)")[self.face_dir])
-            self.stdscr.attrset(curses.A_NORMAL)
-        height = self.logic.table.height()
-
-        self.stdscr.addstr(5 + height, 0, "    a    b    c    d    e    f    g    h")
-        statusline = "%d move%s, %d undo%s" % (self.logic.moves, ["s",""][self.logic.moves == 1],
-                                        self.logic.undos, ["s", ""][self.logic.undos == 1])
-        self.stdscr.addstr(6 + height, 44 - len(statusline), statusline)
-        self.stdscr.addstr(6 + height, 0, "Quit undo ?=help")
-        self.stdscr.attrset(curses.color_pair(1))
-        self.stdscr.addch(6 + height, 0, 'Q')
-        self.stdscr.addch(6 + height, 5, 'u')
-        self.stdscr.addch(6 + height, 10, '?')
-        self.stdscr.attrset(curses.A_NORMAL)
-
-    def render_cards(self):
-        # Cells
-        for cellno, card in enumerate(self.logic.table.free_cells):
-            if card is not None:
-                selected = isinstance(self.selected, CellSelection) \
-                           and self.selected.cell == cellno
-
-                self.stdscr.move(1, 1 + 5 *cellno)
-                self.render_card(card, selected)
-                self.stdscr.addch(2, 2 + 5 * cellno, "wxyz"[cellno])
-
-        suites = "hsdc"
-        for foundno, suite in enumerate(suites):
-            card = self.logic.table.get_card("F%s" % suite)
-            if card is not None:
-                self.stdscr.move(1, 25 + 5 * foundno)
-                self.render_card(card)
-
-        # Render cards
-        for colno, column in enumerate(self.logic.table.columns):
-            selected = isinstance(self.selected, ColumnSelection) \
-                       and self.selected.col == colno
-
-            if selected:
-                num = self.selected.num
-
-            if len(column) > 0 and len(column) == len(self.logic.contiguous_range(colno)):
-                self.stdscr.move(3, 3 + 5 * colno)
-                self.stdscr.attrset(curses.color_pair(7))
-                self.stdscr.addstr("   ")
-                self.stdscr.attrset(curses.A_NORMAL)
-
-            for cardno, card in enumerate(column):
-                self.stdscr.move(4 + cardno, 3 + 5 * colno)
-                will_move = self.logic.can_automove(card)
-                self.render_card(card, selected and cardno >= (len(column) - num), will_move)
-
-    def render_card(self, card, selected=False, will_move=False):
-        #Precedence is selected > automove > default
-
-        if card.color == "r":
-            color_pair = curses.color_pair(1)
-        else:
-            color_pair = curses.A_NORMAL
-
-        if selected:
-            if card.color == "r":
-                color_pair = curses.color_pair(3)
-            else:
-                color_pair = curses.color_pair(2)
-
-        self.stdscr.attrset(color_pair)
-        if will_move:
-            self.stdscr.attron(curses.A_BOLD)
-        self.stdscr.addstr(str(card))
-        self.stdscr.attrset(curses.A_NORMAL)
+        self.window.move(5 + self.logic.table.height(), 43)

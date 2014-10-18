@@ -23,15 +23,12 @@ if __name__ == "__main__":
             networking = True
             sys.argv.pop(1)
 
-    event_queue = Queue.Queue()
-    logic = FreeCellLogic(event_queue)
-    gui = FreeCellGUI(event_queue, logic)
     seed = None
     if not networking:
         if len(sys.argv) > 1:
             seed = int(sys.argv[1])
 
-    game = FreeCellGame(event_queue, logic, gui, seed, debug, networking)
+    game = FreeCellGame(seed, debug, networking)
     curses.wrapper(game.start)
     if game.stats:
         m, s = divmod(game.stats.time, 60)

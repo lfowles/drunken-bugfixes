@@ -1,13 +1,17 @@
+import Queue
 import random
 import threading
 import time
 
 from events import *
 
+from gui import FreeCellGUI
+from input import CursesInput
+from logic import FreeCellLogic
 from network import FreeCellNetworking
 
 class FreeCellGame(object):
-    def __init__(self, event_queue, logic, gui, seed=None, debug=False, networking=False):
+    def __init__(self, seed=None, debug=False, networking=False):
         """
         :param Queue.Queue event_queue: Event Queue
         :param FreeCellLogic logic: Logic
@@ -16,9 +20,11 @@ class FreeCellGame(object):
         :param bool debug: Debug enabled
         :param bool networking: Networking enabled
         """
-        self.event_queue = event_queue
-        self.logic = logic
-        self.gui = gui
+        self.event_queue = Queue.Queue()
+        self.logic = FreeCellLogic(self.event_queue)
+        self.gui = FreeCellGUI(self.event_queue, self.logic)
+        self.input = CursesInput(self.event_queue)
+
         self.gui.set_screen("intro")
         self.stats = None
         self.debug = debug
@@ -35,8 +41,13 @@ class FreeCellGame(object):
                 self.set_seed(seed)
 
     def start(self, stdscr):
+        if self.debug:
+            from pydevd import pydevd
+            from debug import DEBUG_HOST, DEBUG_PORT
+            pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
 
         self.shutdown_event.set()
+        self.input.start(stdscr)
         self.gui.start(stdscr)
         self.game_loop()
 
@@ -47,15 +58,10 @@ class FreeCellGame(object):
         self.gui.set_screen("game")
 
     def game_loop(self):
-        if self.debug:
-            from pydevd import pydevd
-            from debug import DEBUG_HOST, DEBUG_PORT
-            pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
-
         self.gui.render()
         while self.shutdown_event.is_set():
             try:
-                self.gui.get_input()
+                self.input.get_input()
                 self.process_event()
             except KeyboardInterrupt:
                 while not self.event_queue.empty():

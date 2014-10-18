@@ -82,7 +82,6 @@ class FreeCellGame(object):
 
         while self.shutdown_event.is_set():
             try:
-                self.input.get_input()
                 self.gui.render()
                 self.event_dispatch.update(.1)
             except KeyboardInterrupt:

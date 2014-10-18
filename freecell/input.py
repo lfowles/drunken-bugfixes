@@ -15,9 +15,10 @@ class CursesInput(object):
         self.window.nodelay(1)
 
     def run(self):
-        r, w, x = select.select([sys.stdin], [], [])
-        if len(r) > 0:
-            self.get_input()
+        while True:
+            r, w, x = select.select([sys.stdin], [], [])
+            if len(r) > 0:
+                self.get_input()
 
     def get_input(self):
         with self.lock:

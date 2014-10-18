@@ -7,7 +7,6 @@ import events
 from events import *
 
 from gui import FreeCellGUI
-from input import CursesInput
 from logic import FreeCellLogic
 from network import FreeCellNetworking
 
@@ -24,16 +23,19 @@ class FreeCellGame(object):
         self.event_dispatch = events.event_dispatch
         self.logic = FreeCellLogic()
         self.gui = FreeCellGUI(self.logic)
-        self.input = CursesInput()
-
+        self.input = self.gui.get_input()
         self.stats = None
         self.debug = debug
         self.networking = None
         self.shutdown_event = threading.Event()
         self.state = ""
+        self.threads = []
+        input_thread = threading.Thread(target=self.input.run)
+        input_thread.daemon = True
+        self.threads.append(input_thread)
         if networking:
-            self.networking = FreeCellNetworking(self.shutdown_event)
-            threading.Thread(target=self.networking.run).start()
+            self.networking = FreeCellNetworking()
+            self.threads.append(threading.Thread(target=self.networking.run, args=(self.shutdown_event,)))
         else:
             event = SeedEvent(seed=seed or random.randint(0, 0xFFFFFFFF))
             self.event_dispatch.send(event)
@@ -48,7 +50,8 @@ class FreeCellGame(object):
         self.event_dispatch.register(self.quit, ["QuitEvent"])
         self.event_dispatch.register(self.set_seed, ["SeedEvent"])
         self.event_dispatch.register(self.handle_input, ["InputEvent"])
-
+        for thread in self.threads:
+            thread.start()
         self.shutdown_event.set()
         self.logic.start()
         self.input.start(stdscr)

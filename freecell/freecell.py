@@ -13,15 +13,14 @@ if __name__ == "__main__":
 
     debug = networking = False
     if len(sys.argv) > 1:
-        if sys.argv[1] == "debug":
-            try:
-                debug = True
-                sys.argv.pop(1)
-            except ImportError:
-                pass
-        elif sys.argv[1] == "network":
+        if "debug" in sys.argv:
+            sys.argv.remove("debug")
+            debug = True
+
+    if len(sys.argv) > 1:
+        if "network" in sys.argv:
             networking = True
-            sys.argv.pop(1)
+            sys.argv.remove("network")
 
     seed = None
     if not networking:

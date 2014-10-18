@@ -1,10 +1,13 @@
 import curses
+import threading
 import time
 
 import events
 
 from collections import namedtuple
 from events import *
+from input import CursesInput
+
 
 ColumnSelection = namedtuple('ColumnSelection', ['col','num'])
 CellSelection = namedtuple('CellSelection', ['cell'])
@@ -20,38 +23,48 @@ class FreeCellGUI(object):
 
         self.screens = {}
         self.screen = "intro"
+        self.lock = threading.Lock()
+        self.input = CursesInput(self.lock)
+
+    def get_input(self):
+        return self.input
 
     def start(self, stdscr):
-        self.stdscr = stdscr
-        self.screens["intro"] = LoadGUI(self.stdscr)
-        self.screens["game"] = GameGUI(self.stdscr, self.logic)
-        self.screens["help"] = HelpGUI(self.stdscr,)
+        with self.lock:
+            self.stdscr = stdscr
+            self.screens["intro"] = LoadGUI(self.stdscr)
+            self.screens["game"] = GameGUI(self.stdscr, self.logic)
+            self.screens["help"] = HelpGUI(self.stdscr,)
 
-        curses.curs_set(0)
-        curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
+            curses.curs_set(0)
+            curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
 
-        # selected
-        curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLUE)
-        curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLUE)
+            # selected
+            curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLUE)
+            curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLUE)
 
-        curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+            curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
 
-        # can automove
-        curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_RED)
-        curses.init_pair(6, curses.COLOR_CYAN, curses.COLOR_RED)
+            # can automove
+            curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_RED)
+            curses.init_pair(6, curses.COLOR_CYAN, curses.COLOR_RED)
 
-        # stacked correctly
-        curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_GREEN)
-        curses.init_pair(8, curses.COLOR_CYAN, curses.COLOR_GREEN)
+            # stacked correctly
+            curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_GREEN)
+            curses.init_pair(8, curses.COLOR_CYAN, curses.COLOR_GREEN)
 
     def set_screen(self, screen):
-        self.screens[self.screen].unload()
-        self.screen = screen
-        self.screens[self.screen].load()
+        with self.lock:
+            self.screens[self.screen].unload()
+            self.screen = screen
+            self.screens[self.screen].load()
 
     def render(self):
-        self.screens[self.screen].render()
+        with self.lock:
+            self.screens[self.screen].render()
 
+# One restriction, since input is in a separate thread:
+# All curses interaction _must_ be done in render(), load(), or unload()
 class GUIState(object):
     def __init__(self, window):
         self.window = window

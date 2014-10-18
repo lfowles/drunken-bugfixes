@@ -14,7 +14,7 @@ from events import *
 # all receiving is done by FreeCellGame acquiring the lock
 # must set source="networking" attribute
 class FreeCellNetworking(asynchat.async_chat):
-    def __init__(self, shutdown_event, host="localhost", port=11982):
+    def __init__(self, host="localhost", port=11982):
         asynchat.async_chat.__init__(self)
         self.event_dispatch = events.event_dispatch
         self.set_terminator("\r\n")
@@ -22,13 +22,12 @@ class FreeCellNetworking(asynchat.async_chat):
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connect((host, port))
         self.lock = threading.Lock()
-        self.shutdown_event = shutdown_event
         self.state = "connecting"
 
-    def run(self):
-        self.shutdown_event.wait()
+    def run(self, shutdown_event):
+        shutdown_event.wait()
         self.event_dispatch.register(self.send_event, ["SeedEvent"])
-        while self.shutdown_event.is_set():
+        while shutdown_event.is_set():
             with self.lock:
                 asyncore.loop(timeout=.1, count=1)
         self.event_dispatch.unregister(self.send_event, ["SeedEvent"])

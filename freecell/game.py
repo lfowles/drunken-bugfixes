@@ -88,14 +88,6 @@ class FreeCellGame(object):
             except KeyboardInterrupt:
                 self.event_dispatch.send(FinishEvent(won=False), priority=1)
 
-    def process_event(self):
-
-            if self.networking is not None:
-                if hasattr(event, "origin") and event.origin != "networking":
-                    self.networking.send_event(event)
-                if isinstance(event, Stats):
-                    self.networking.send_event(event)
-
     def finish(self, event):
         self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
         self.event_dispatch.send(self.stats)

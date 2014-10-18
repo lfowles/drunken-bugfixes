@@ -1,7 +1,7 @@
 import copy
 import time
 
-from board import Tableau, Deck, Card, State
+from board import Tableau, Deck
 from events import *
 
 class FreeCellLogic(object):
@@ -42,17 +42,6 @@ class FreeCellLogic(object):
         if self.is_solved():
             self.solved = True
             self.event_queue.put(FinishEvent(won=True))
-
-    def test_supermove(self):
-        foundations = {"h":[], "s":[], "c":[], "d":[]}
-        columns = [[], [Card(2,"d")], [Card(2,"d")], [Card(2,"d")], [], [], [], [Card(7,"d")]]
-        free_cells = [Card(13, "d"), Card(13, "d"), None, None]
-        columns[0] = [Card(13,"h"), Card(12,"s"), Card(11,"h"), Card(10,"s"),
-                                 Card(9,"h"), Card(8,"s"), Card(7, "h"), Card(6,"s"),
-                                 Card(5,"h"), Card(4,"s"), Card(3,"h"), Card(2,"s")]
-
-        state = State(foundations=foundations, columns=columns, cells=free_cells)
-        self.table.state = state
 
     def can_automove(self, card):
         foundations = self.table.foundations

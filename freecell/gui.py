@@ -138,11 +138,6 @@ class FreeCellGUI(object):
         elif key == ord('Q'):
             self.event_queue.put(FinishEvent(won=False))
 
-        # s Load supermove test
-        elif key == ord('s'):
-            self.logic.test_supermove()
-            self.selected = None
-
         if reset_num:
             self.select_num = 0
 

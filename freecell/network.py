@@ -27,11 +27,11 @@ class FreeCellNetworking(asynchat.async_chat):
 
     def run(self, shutdown_event):
         shutdown_event.wait()
-        self.event_dispatch.register(self.send_event, ["SeedEvent"])
+        self.event_dispatch.register(self.send_event, ["Stats"])
         while shutdown_event.is_set():
             with self.lock:
                 asyncore.loop(timeout=.1, count=1)
-        self.event_dispatch.unregister(self.send_event, ["SeedEvent"])
+        self.event_dispatch.unregister(self.send_event, ["Stats"])
         self.close_when_done()
 
     def collect_incoming_data(self, data):

@@ -256,12 +256,6 @@ class FreeCellGUI(object):
         else:
             color_pair = curses.A_NORMAL
 
-        if will_move:
-            if card.color == "r":
-                color_pair = curses.color_pair(6)
-            else:
-                color_pair = curses.color_pair(5)
-
         if selected:
             if card.color == "r":
                 color_pair = curses.color_pair(3)
@@ -269,5 +263,7 @@ class FreeCellGUI(object):
                 color_pair = curses.color_pair(2)
 
         self.stdscr.attrset(color_pair)
+        if will_move:
+            self.stdscr.attron(curses.A_BOLD)
         self.stdscr.addstr(str(card))
         self.stdscr.attrset(curses.A_NORMAL)

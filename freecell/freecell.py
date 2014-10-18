@@ -29,12 +29,12 @@ if __name__ == "__main__":
 
     game = FreeCellGame(seed, debug, networking)
     curses.wrapper(game.start)
-    if game.stats:
+
+    if game.quit_message is not None:
+        print game.quit_message
+
+    if game.stats is not None:
         m, s = divmod(game.stats.time, 60)
         h, m = divmod(m, 60)
         time_str = "%dh%02dm%.2fs" % (h, m, s)
-        if game.stats.won:
-            print "You win!"
-        else:
-            print "Better luck next time."
         print "Seed %d, %s, %d moves, %d undos" % (game.stats.seed, time_str, game.stats.moves, game.stats.undos)

@@ -20,7 +20,8 @@ class FreeCellNetworking(asynchat.async_chat):
         self.set_terminator("\r\n")
         self.buffer = []
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.connect((host, port))
+        self.addr = (host, port)
+        self.connect(self.addr)
         self.lock = threading.Lock()
         self.state = "connecting"
 
@@ -52,9 +53,7 @@ class FreeCellNetworking(asynchat.async_chat):
 
     def handle_error(self):
         traceback.print_exc()
-        time.sleep(10)
-        self.event_dispatch.send(MessageEvent(level="networking", message="Connection Refused"))
-        self.event_dispatch.send(QuitEvent(unused=True))
+        self.event_dispatch.send(QuitEvent(message="Connection refused to %s:%d" % self.addr))
         self.state = "refused"
         self.close()
 

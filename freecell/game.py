@@ -28,6 +28,7 @@ class FreeCellGame(object):
         self.debug = debug
         self.networking = None
         self.shutdown_event = threading.Event()
+        self.quit_message = None
         self.state = ""
         self.threads = []
         input_thread = threading.Thread(target=self.input.run)
@@ -98,7 +99,13 @@ class FreeCellGame(object):
     def finish(self, event):
         self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
         self.event_dispatch.send(self.stats)
-        self.event_dispatch.send(QuitEvent(unused=True))
+        if self.stats.won:
+            message = "You won!"
+        else:
+            message = "Better luck next time."
+        self.event_dispatch.send(QuitEvent(message=message))
+
 
     def quit(self, event):
+        self.quit_message = event.message
         self.shutdown_event.clear()

@@ -49,7 +49,7 @@ class FreeCellNetworking(asynchat.async_chat):
     def handle_connect(self):
         self.state = "connected"
         self.event_dispatch.send(MessageEvent(level="networking", message="Connected"))
-        self.send_json({"event":"connect", "version": 1.2})
+        self.send_json({"event":"connect", "version": 0.1})
 
     def handle_error(self):
         traceback.print_exc()

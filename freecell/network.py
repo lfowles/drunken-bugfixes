@@ -14,7 +14,7 @@ from events import *
 # all receiving is done by FreeCellGame acquiring the lock
 # must set source="networking" attribute
 class FreeCellNetworking(asynchat.async_chat):
-    def __init__(self, host="localhost", port=11982):
+    def __init__(self, host="knitwithlogic.com", port=11982):
         asynchat.async_chat.__init__(self)
         self.event_dispatch = events.event_dispatch
         self.set_terminator("\r\n")

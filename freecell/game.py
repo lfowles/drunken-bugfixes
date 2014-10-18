@@ -79,14 +79,20 @@ class FreeCellGame(object):
             self.event_dispatch.send(FinishEvent(won=False))
 
     def game_loop(self):
-        self.gui.render()
-
+        MAX_FPS = 30
+        S_PER_FRAME = 1.0/MAX_FPS
         while self.shutdown_event.is_set():
+            start = time.time()
             try:
-                self.gui.render()
                 self.event_dispatch.update(.1)
+                # TODO: have GUI only render on changed screen
+                self.gui.render()
+                elapsed = time.time() - start
+                if elapsed < S_PER_FRAME:
+                    time.sleep(S_PER_FRAME-elapsed)
             except KeyboardInterrupt:
                 self.event_dispatch.send(FinishEvent(won=False), priority=1)
+
 
     def finish(self, event):
         self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())

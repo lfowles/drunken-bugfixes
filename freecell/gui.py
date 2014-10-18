@@ -31,9 +31,20 @@ class FreeCellGUI(object):
         self.stdscr = stdscr
         curses.curs_set(0)
         curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
+
+        # selected
         curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLUE)
         curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLUE)
+
         curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+
+        # can automove
+        curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_RED)
+        curses.init_pair(6, curses.COLOR_CYAN, curses.COLOR_RED)
+
+        # stacked correctly
+        curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_GREEN)
+        curses.init_pair(8, curses.COLOR_CYAN, curses.COLOR_GREEN)
 
         curses.halfdelay(2)
 
@@ -216,7 +227,7 @@ class FreeCellGUI(object):
             card = self.logic.table.get_card("F%s" % suite)
             if card is not None:
                 self.stdscr.move(1, 25 + 5 * foundno)
-                self.render_card(card, False)
+                self.render_card(card)
 
         # Render cards
         for colno, column in enumerate(self.logic.table.columns):
@@ -226,21 +237,36 @@ class FreeCellGUI(object):
             if selected:
                 num = self.selected.num
 
+            if len(column) > 0 and len(column) == len(self.logic.contiguous_range(colno)):
+                self.stdscr.move(3, 3 + 5 * colno)
+                self.stdscr.attrset(curses.color_pair(7))
+                self.stdscr.addstr("   ")
+                self.stdscr.attrset(curses.A_NORMAL)
+
             for cardno, card in enumerate(column):
                 self.stdscr.move(4 + cardno, 3 + 5 * colno)
-                self.render_card(card, selected and cardno >= (len(column) - num) )
+                will_move = self.logic.can_automove(card)
+                self.render_card(card, selected and cardno >= (len(column) - num), will_move)
 
-    def render_card(self, card, selected):
+    def render_card(self, card, selected=False, will_move=False):
+        #Precedence is selected > automove > default
+
+        if card.color == "r":
+            color_pair = curses.color_pair(1)
+        else:
+            color_pair = curses.A_NORMAL
+
+        if will_move:
+            if card.color == "r":
+                color_pair = curses.color_pair(6)
+            else:
+                color_pair = curses.color_pair(5)
+
         if selected:
             if card.color == "r":
                 color_pair = curses.color_pair(3)
             else:
                 color_pair = curses.color_pair(2)
-        else:
-            if card.color == "r":
-                color_pair = curses.color_pair(1)
-            else:
-                color_pair = curses.A_NORMAL
 
         self.stdscr.attrset(color_pair)
         self.stdscr.addstr(str(card))

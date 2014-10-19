@@ -25,22 +25,22 @@ class CompetitionServer(object):
     def __init__(self, host, port):
         self.event_queue = Queue.Queue()
         self.competitors = {}
-        self.run_networking = threading.Event()
-        self.networking = FreecellServer(host, port, self.event_queue, self.run_networking)
-        threading.Thread(target=self.networking.run).start()
+        self.shutdown_event = threading.Event()
+        self.networking = FreecellServer(host, port, self.event_queue)
+        threading.Thread(target=self.networking.run, args=(self.shutdown_event,)).start()
         self.running = True
         self.current_seed = random.randint(1, 0xFFFFFFFF)
         #self.current_seed = 25904
 
     def start(self):
-        self.run_networking.set()
+        self.shutdown_event.set()
         while self.running:
             try:
                 self.update()
             except KeyboardInterrupt:
                 print "Keyboard Interrupt"
                 self.running = False
-        self.run_networking.clear()
+        self.shutdown_event.clear()
 
     def update(self):
         try:
@@ -130,7 +130,7 @@ class FreecellConnection(asynchat.async_chat):
             self.push(json.dumps(object)+"\r\n")
 
 class FreecellServer(asyncore.dispatcher):
-    def __init__(self, host, port, event_queue, run_signal):
+    def __init__(self, host, port, event_queue):
         """
         :param str host: Host
         :param int port: Port
@@ -145,12 +145,11 @@ class FreecellServer(asyncore.dispatcher):
         self.event_queue = event_queue
         self.connections = {}
         """:type : dict[(str, int), FreecellConnection]"""
-        self.running = run_signal
         self.lock = threading.Lock()
 
-    def run(self):
-        self.running.wait()
-        while self.running.is_set():
+    def run(self, shutdown_event):
+        shutdown_event.wait()
+        while shutdown_event.is_set():
             with self.lock:
                 asyncore.loop(timeout=.1, count=1)
                 self.update_connections()

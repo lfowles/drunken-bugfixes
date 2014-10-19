@@ -2,7 +2,7 @@ import curses
 import select
 import sys
 
-from bin.freecell.client import events
+import events
 
 
 class CursesInput(object):

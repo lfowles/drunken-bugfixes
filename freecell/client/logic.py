@@ -1,8 +1,8 @@
 import copy
 
 from board import Tableau, Deck
-from bin.freecell.client.events import *
-from bin.freecell.client import events
+from events import *
+import events
 
 
 class FreeCellLogic(object):

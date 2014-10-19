@@ -1,7 +1,7 @@
 import curses
 
-from bin.freecell.client.events import *
-from bin.freecell.client import events
+from events import *
+import events
 from input import CursesInput
 
 

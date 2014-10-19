@@ -4,14 +4,12 @@ import json
 import socket
 import traceback
 
-from bin.freecell.client.events import *
-
-
+from events import *
 
 # only add to event queue
 # all receiving is done by FreeCellGame acquiring the lock
 # must set source="networking" attribute
-from bin.freecell.client import events
+import events
 
 
 class FreeCellNetworking(asynchat.async_chat):

@@ -57,18 +57,32 @@ class FreeCellLogic(object):
 
         this.remove(card.suite)
 
-        ov1 = len(foundations[other[0]]) > 0 and foundations[other[0]][-1].value
-        ov2 = len(foundations[other[1]]) > 0 and foundations[other[1]][-1].value
-        sv = len(foundations[this[0]]) > 0 and foundations[this[0]][-1].value
 
-        # Nothing to put this card on
-        if ov1 >= card.value - 1 and ov2 >= card.value - 1:
+        # 0 if empty, value otherwise
+        other_1 = len(foundations[other[0]]) > 0 and foundations[other[0]][-1].value
+        other_2 = len(foundations[other[1]]) > 0 and foundations[other[1]][-1].value
+
+        same = len(foundations[this[0]]) > 0 and foundations[this[0]][-1].value
+
+        # The required logic breaks my head, so here's a helper function
+        this_can_stack = lambda this, other: other > this
+
+        free_to_stack = lambda this, other_1, other_2: other_1 >= this - 1 and other_2 >= this - 1
+
+        # If there is nothing to put on this card on the main board
+        # (The values of the stacks are at least the values of potentially stackable card)
+        if free_to_stack(card.value, other_1, other_2):
             return True
 
-        # Not sure
-        if ov1 >= card.value - 2 and ov2 >= card.value - 2 \
-            and sv >= card.value - 3:
+        other_val = card.value - 1
+        # If EVERY other card that could be stacked is eligible itself for automove and has nothing that can stack on it
+        #   other_1 has a stack
+        # The "EVERY other cards" are free to stack
+        #             can_stack                    can_stack                 can_stack a card that's -1
+        if other_1 >= other_val - 1 and other_2 >= other_val - 1 and same >= other_val - 1 - 1:
             return True
+
+        return False
 
     def automove(self, event=None):
         found_moves = False

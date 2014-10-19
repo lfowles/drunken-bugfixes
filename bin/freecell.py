@@ -1,3 +1,4 @@
+#!/usr/bin/env python2.7
 #adapted from freecell.c http://www.linusakesson.net/software/
 
 import curses

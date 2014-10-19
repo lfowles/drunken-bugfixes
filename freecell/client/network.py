@@ -71,6 +71,6 @@ class FreeCellNetworking(asynchat.async_chat):
             if isinstance(event, Stats):
                 self.send_json({'event':'stats', 'seed':event.seed, 'time':event.time, 'moves':event.moves, 'undos':event.undos, 'won':event.won})
 
-    def send_json(self, object):
+    def send_json(self, obj):
         if self.state == "connected":
-            self.push(json.dumps(object)+"\r\n")
+            self.push(json.dumps(obj)+"\r\n")

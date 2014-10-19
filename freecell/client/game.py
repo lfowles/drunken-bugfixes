@@ -11,9 +11,6 @@ from network import FreeCellNetworking
 class FreeCellGame(object):
     def __init__(self, seed=None, debug=False, networking=False):
         """
-        :param Queue.Queue event_queue: Event Queue
-        :param FreeCellLogic logic: Logic
-        :param FreeCellGUI gui: GUI
         :param int seed: Seed
         :param bool debug: Debug enabled
         :param bool networking: Networking enabled
@@ -42,7 +39,7 @@ class FreeCellGame(object):
     def start(self, stdscr):
         if self.debug:
             from pydevd import pydevd
-            from bin.freecell.client.debug import DEBUG_HOST, DEBUG_PORT
+            from debug import DEBUG_HOST, DEBUG_PORT
             pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
 
         self.event_dispatch.register(self.finish, ["FinishEvent"])

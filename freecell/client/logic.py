@@ -7,9 +7,6 @@ import events
 
 class FreeCellLogic(object):
     def __init__(self):
-        """
-        :param Queue.Queue event_queue: Event Queue
-        """
         self.deck = Deck()
         self.table = Tableau()
         self.event_dispatch = events.event_dispatch

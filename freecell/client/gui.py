@@ -11,7 +11,6 @@ CellSelection = namedtuple('CellSelection', ['cell'])
 class FreeCellGUI(object):
     def __init__(self, logic):
         """
-        :param Queue.Queue event_queue: Event Queue
         :param FreeCellLogic logic: Logic
         """
         self.logic = logic

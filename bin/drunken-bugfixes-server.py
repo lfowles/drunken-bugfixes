@@ -125,9 +125,9 @@ class FreecellConnection(asynchat.async_chat):
             self.event_queue.put(WinEvent(id=self.id, seed=message["seed"], time=message["time"], moves=message["moves"], undos=message["undos"], won=message["won"]))
             self.state = "won"
 
-    def send_json(self, object):
+    def send_json(self, obj):
         with self.lock:
-            self.push(json.dumps(object)+"\r\n")
+            self.push(json.dumps(obj)+"\r\n")
 
 class FreecellServer(asyncore.dispatcher):
     def __init__(self, host, port, event_queue):
@@ -135,7 +135,6 @@ class FreecellServer(asyncore.dispatcher):
         :param str host: Host
         :param int port: Port
         :param Queue.Queue event_queue: Event Queue
-        :param threading.Event run_signal: Run signal
         """
         asyncore.dispatcher.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)

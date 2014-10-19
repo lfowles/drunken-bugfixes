@@ -6,7 +6,6 @@ import sys
 
 from freecell.client.game import FreeCellGame
 
-
 if __name__ == "__main__":
 
     debug = networking = False

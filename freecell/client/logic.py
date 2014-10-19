@@ -1,10 +1,9 @@
 import copy
-import time
-
-import events
 
 from board import Tableau, Deck
-from events import *
+from bin.freecell.client.events import *
+from bin.freecell.client import events
+
 
 class FreeCellLogic(object):
     def __init__(self):

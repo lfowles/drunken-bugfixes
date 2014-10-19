@@ -1,14 +1,12 @@
 import Queue
 import random
-import threading
-import time
 
 import events
 from events import *
-
 from gui import FreeCellGUI
 from logic import FreeCellLogic
 from network import FreeCellNetworking
+
 
 class FreeCellGame(object):
     def __init__(self, seed=None, debug=False, networking=False):
@@ -44,7 +42,7 @@ class FreeCellGame(object):
     def start(self, stdscr):
         if self.debug:
             from pydevd import pydevd
-            from debug import DEBUG_HOST, DEBUG_PORT
+            from bin.freecell.client.debug import DEBUG_HOST, DEBUG_PORT
             pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
 
         self.event_dispatch.register(self.finish, ["FinishEvent"])

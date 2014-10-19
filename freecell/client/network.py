@@ -2,17 +2,18 @@ import asynchat
 import asyncore
 import json
 import socket
-import threading
-import time
 import traceback
 
-import events
+from bin.freecell.client.events import *
 
-from events import *
+
 
 # only add to event queue
 # all receiving is done by FreeCellGame acquiring the lock
 # must set source="networking" attribute
+from bin.freecell.client import events
+
+
 class FreeCellNetworking(asynchat.async_chat):
     def __init__(self, host="knitwithlogic.com", port=11982):
         asynchat.async_chat.__init__(self)

@@ -1,9 +1,9 @@
 import curses
-
-import events
-
 import select
 import sys
+
+from bin.freecell.client import events
+
 
 class CursesInput(object):
     def __init__(self, curses_lock):

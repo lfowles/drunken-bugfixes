@@ -2,11 +2,8 @@
 
 import curses
 import sys
-import Queue
 
-from game import FreeCellGame
-from logic import FreeCellLogic
-from gui import FreeCellGUI
+from freecell.client.game import FreeCellGame
 
 
 if __name__ == "__main__":

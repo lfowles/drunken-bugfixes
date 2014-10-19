@@ -1,11 +1,7 @@
 import curses
-import threading
-import time
 
-import events
-
-from collections import namedtuple
-from events import *
+from bin.freecell.client.events import *
+from bin.freecell.client import events
 from input import CursesInput
 
 

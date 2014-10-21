@@ -5,6 +5,16 @@ import events
 from events import *
 from network import FreecellServer
 
+class Competitor(object):
+    def __init__(self, connection):
+        """
+        :param network.FreecellConnection connection: Connection
+        """
+        self.connection = connection
+
+    def send(self, event):
+        self.connection.send_json(event)
+
 # last until everyone finishes seed or quits
 class CompetitionServer(object):
     def __init__(self, host, port):
@@ -44,12 +54,12 @@ class CompetitionServer(object):
         print "WIN: %s" % event.id
         for competitor in self.competitors.values():
             #WinEvent = namedtuple('WinEvent', ['id', 'seed', 'time', 'moves', 'undos', 'won'])
-            competitor.send_json({"event":"stats", "id":event.id, "seed":event.seed, "time":event.time, "moves":event.moves, "undos":event.undos, "won":event.won})
+            competitor.send({"event":"stats", "id":event.id, "seed":event.seed, "time":event.time, "moves":event.moves, "undos":event.undos, "won":event.won})
 
     def competitor_join(self, event):
         print "JOIN: %s v%.2f" % (event.id, event.version)
-        self.competitors[event.id] = event.object
-        event.object.send_json({"event":"seed", "seed":self.current_seed})
+        self.competitors[event.id] = Competitor(event.object)
+        event.object.send({"event":"seed", "seed":self.current_seed})
 
     def competitor_quit(self, event):
         print "QUIT: %s %s" % (event.id, event.reason)

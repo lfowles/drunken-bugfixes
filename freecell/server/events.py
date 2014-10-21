@@ -10,6 +10,7 @@ JoinEvent = namedtuple('JoinEvent', ['id', 'version', 'object'])
 QuitEvent = namedtuple('QuitEvent', ['id', 'reason'])
 WinEvent = namedtuple('WinEvent', ['id', 'seed', 'time', 'moves', 'undos', 'won'])
 SeedEvent = namedtuple('SeedEvent', ['seed'])
+MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
 
 class EventDispatch(object):
     def __init__(self):

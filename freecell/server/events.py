@@ -12,6 +12,15 @@ WinEvent = namedtuple('WinEvent', ['id', 'seed', 'time', 'moves', 'undos', 'won'
 SeedEvent = namedtuple('SeedEvent', ['seed'])
 MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
 
+AuthEvent = namedtuple('AuthEvent', ['id', 'connection'])
+RegisterEvent = namedtuple('RegisterEvent', ['id', 'username'])
+NameTakenEvent = namedtuple('NameTakenEvent', ['id', 'username'])
+LoginTokenEvent = namedtuple('LoginTokenEvent', ['id', 'username', 'token'])
+TokenHashEvent = namedtuple('TokenHashEvent', ['id', 'username', 'nonce_hash'])
+LoginEvent = namedtuple('LoginEvent', ['id', 'username'])
+SeedRequestEvent = namedtuple('SeedRequestEvent', ['id'])
+
+
 class EventDispatch(object):
     def __init__(self):
         self.queue = Queue.PriorityQueue()

@@ -20,6 +20,7 @@ class FreeCellGame(object):
         self.gui = FreeCellGUI(self.logic)
         self.input = self.gui.get_input()
         self.stats = None
+        self.seed = None
         self.debug = debug
         self.networking = None
         self.shutdown_event = threading.Event()
@@ -41,6 +42,8 @@ class FreeCellGame(object):
             from pydevd import pydevd
             from debug import DEBUG_HOST, DEBUG_PORT
             pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
+        if self.networking is not None:
+            self.event_dispatch.send(ScreenChangeEvent(screen="login"))
 
         self.event_dispatch.register(self.finish, ["FinishEvent"])
         self.event_dispatch.register(self.quit, ["QuitEvent"])
@@ -58,7 +61,7 @@ class FreeCellGame(object):
         self.state = "seeded"
         self.seed = event.seed
         self.logic.load_seed(self.seed)
-        self.gui.set_screen("game")
+        self.event_dispatch.send(ScreenChangeEvent(screen="game"))
 
     def handle_input(self, event):
         if event.key == ord('?'):
@@ -90,13 +93,16 @@ class FreeCellGame(object):
 
 
     def finish(self, event):
-        self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
-        self.event_dispatch.send(self.stats)
-        if self.stats.won:
-            message = "You won!"
+        if self.seed is not None:
+            self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start_time, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
+            self.event_dispatch.send(self.stats)
+            if self.stats.won:
+                message = "You won!"
+            else:
+                message = "Better luck next time."
+            self.event_dispatch.send(QuitEvent(message=message))
         else:
-            message = "Better luck next time."
-        self.event_dispatch.send(QuitEvent(message=message))
+            self.event_dispatch.send(QuitEvent(message=""))
 
 
     def quit(self, event):

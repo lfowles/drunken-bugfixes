@@ -3,6 +3,7 @@ import random
 import events
 
 from events import *
+from loginserver import LoginWrapper
 from network import FreecellServer
 
 from ..shared.version import VERSION
@@ -22,13 +23,14 @@ class CompetitionServer(object):
     def __init__(self, host, port):
         self.event_dispatch = events.event_dispatch
         self.competitors = {}
+        self.logins = {}
         self.shutdown_event = threading.Event()
         self.networking = FreecellServer(host, port)
         threading.Thread(target=self.networking.run, args=(self.shutdown_event,)).start()
         self.current_seed = random.randint(1, 0xFFFFFFFF)
 
     def start(self):
-        self.event_dispatch.register(self.handle_event, ["JoinEvent", "QuitEvent", "WinEvent"])
+        self.event_dispatch.register(self.handle_event, ["JoinEvent", "QuitEvent", "WinEvent", "AuthEvent", "SeedRequestEvent"])
         MAX_FPS = 30
         S_PER_FRAME = 1.0/MAX_FPS
         self.shutdown_event.set()
@@ -53,6 +55,12 @@ class CompetitionServer(object):
         elif isinstance(event, WinEvent):
             self.competitor_win(event)
 
+        elif isinstance(event, AuthEvent):
+            self.competitor_auth(event)
+
+        elif isinstance(event, SeedRequestEvent):
+            self.send_seed(event)
+
     def competitor_win(self, event):
         print "WIN: %s" % event.id
         for competitor in self.competitors.values():
@@ -61,12 +69,22 @@ class CompetitionServer(object):
 
     def competitor_join(self, event):
         print "JOIN: %s v%.2f" % (event.id, event.version)
-        competitor = Competitor(event.object)
-        self.competitors[event.id] = competitor
+
         if event.version == VERSION:
-            competitor.send({"event":"seed", "seed":self.current_seed})
+            self.logins[event.id] = LoginWrapper(event.object)
         else:
-            competitor.send({"event":"badversion", "min_version":VERSION})
+            event.object.send_json({"event":"badversion", "min_version":VERSION})
+
+    def competitor_auth(self, event):
+        print "AUTH"
+        competitor = Competitor(event.connection)
+        self.competitors[event.id] = competitor
+        del self.logins[event.id]
+
+    def send_seed(self, event):
+        print "SEND SEED"
+        if event.id in self.competitors:
+            self.competitors[event.id].send({"event":"seed", "seed":self.current_seed})
 
     def competitor_quit(self, event):
         print "QUIT: %s %s" % (event.id, event.reason)

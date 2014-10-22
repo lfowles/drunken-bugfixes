@@ -2,6 +2,7 @@ import asynchat
 import asyncore
 import json
 import socket
+import time
 import traceback
 
 from ..shared.version import VERSION
@@ -28,11 +29,17 @@ class FreeCellNetworking(asynchat.async_chat):
 
     def run(self, shutdown_event):
         shutdown_event.wait()
-        self.event_dispatch.register(self.send_event, ["Stats"])
+        self.event_dispatch.register(self.send_event, ["Stats", "LoginEvent", "RegisterEvent", "TokenHashEvent", "SeedRequestEvent"])
         while shutdown_event.is_set():
+            start = time.time()
+
             with self.lock:
                 asyncore.loop(timeout=.1, count=1)
-        self.event_dispatch.unregister(self.send_event, ["Stats"])
+
+            elapsed = time.time()-start
+            if elapsed < .2:
+                time.sleep(.2-elapsed)
+        self.event_dispatch.unregister(self.send_event, ["Stats", "LoginEvent", "RegisterEvent", "TokenHashEvent", "SeedRequestEvent"])
         self.close_when_done()
 
     def collect_incoming_data(self, data):
@@ -69,11 +76,32 @@ class FreeCellNetworking(asynchat.async_chat):
                     self.event_dispatch.send(MessageEvent(level="", message="Player %s has conceded after %d seconds, %d moves, %d undos." % (message["id"], message["time"], message["moves"], message["undos"])))
             elif message["event"] == "badversion":
                 self.event_dispatch.send(QuitEvent(message="Client version %s required" % message["min_version"]))
+            elif message["event"] == "nonce":
+                self.event_dispatch.send(NonceEvent(nonce=message["nonce"], salt=message["salt"]))
+            elif message["event"] == "unknownuser":
+                self.event_dispatch.send(UnknownUserEvent(username=message["username"]))
+            elif message["event"] == "nametaken":
+                self.event_dispatch.send(NameTakenEvent(username=message["username"]))
+            elif message["event"] == "logintoken":
+                self.event_dispatch.send(LoginTokenEvent(username=message["username"], token=message["token"]))
+            elif message["event"] == "loggedin":
+                self.event_dispatch.send(LoggedInEvent(username=message["username"]))
+            elif message["event"] == "loginfailed":
+                self.event_dispatch.send(LoginFailedEvent(username=message["username"]))
 
     def send_event(self, event):
         with self.lock:
+            #"LoginEvent", "RegisterEvent", "TokenHashEvent"
             if isinstance(event, Stats):
                 self.send_json({'event':'stats', 'seed':event.seed, 'time':event.time, 'moves':event.moves, 'undos':event.undos, 'won':event.won})
+            elif isinstance(event, LoginEvent):
+                self.send_json({'event':'login', 'username':event.username})
+            elif isinstance(event, RegisterEvent):
+                self.send_json({'event':'register', 'username':event.username})
+            elif isinstance(event, TokenHashEvent):
+                self.send_json({'event':'tokenhash', 'username':event.username, 'nonce_hash':event.nonce_hash})
+            elif isinstance(event, SeedRequestEvent):
+                self.send_json({'event':'seedrequest'})
 
     def send_json(self, obj):
         if self.state == "connected":

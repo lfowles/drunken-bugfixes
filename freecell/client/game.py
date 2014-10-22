@@ -90,12 +90,15 @@ class FreeCellGame(object):
 
 
     def finish(self, event):
-        self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
-        self.event_dispatch.send(self.stats)
-        if self.stats.won:
-            message = "You won!"
+        if self.logic.start_time is not None:
+            self.stats = Stats(seed=self.seed, time=time.time()-self.logic.start_time, moves=self.logic.moves, undos=self.logic.undos, won=self.logic.is_solved())
+            self.event_dispatch.send(self.stats)
+            if self.stats.won:
+                message = "You won!"
+            else:
+                message = "Better luck next time."
         else:
-            message = "Better luck next time."
+            message = ""
         self.event_dispatch.send(QuitEvent(message=message))
 
 

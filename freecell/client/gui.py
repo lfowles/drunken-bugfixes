@@ -1,4 +1,6 @@
 import curses
+import hashlib
+import os.path
 
 from events import *
 import events
@@ -17,9 +19,11 @@ class FreeCellGUI(object):
         self.event_dispatch = events.event_dispatch
 
         self.screens = {}
-        self.screen = "intro"
+        self.screen = "load"
         self.lock = threading.Lock()
         self.input = CursesInput(self.lock)
+
+        self.event_dispatch.register(self.set_screen_event, ["ScreenChangeEvent"])
 
     def get_input(self):
         return self.input
@@ -27,9 +31,10 @@ class FreeCellGUI(object):
     def start(self, stdscr):
         with self.lock:
             self.stdscr = stdscr
-            self.screens["intro"] = LoadGUI(self.stdscr)
+            self.screens["load"] = LoadGUI(self.stdscr)
             self.screens["game"] = GameGUI(self.stdscr, self.logic)
-            self.screens["help"] = HelpGUI(self.stdscr,)
+            self.screens["help"] = HelpGUI(self.stdscr)
+            self.screens["login"] = LoginGUI(self.stdscr)
 
             curses.curs_set(0)
             curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
@@ -47,6 +52,9 @@ class FreeCellGUI(object):
             # stacked correctly
             curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_GREEN)
             curses.init_pair(8, curses.COLOR_CYAN, curses.COLOR_GREEN)
+
+    def set_screen_event(self, event):
+        self.set_screen(event.screen)
 
     def set_screen(self, screen):
         with self.lock:
@@ -74,13 +82,95 @@ class GUIState(object):
     def unload(self):
         pass
 
-class LoadGUI(GUIState):
+class LoginGUI(GUIState):
+    username = ""
+    token = ""
+    message = ("", 0)
+    def load(self):
+        self.event_dispatch.register(self.handle_input, ["InputEvent"])
+
+    def unload(self):
+        self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
+        self.event_dispatch.unregister(self.login_reply, ["NonceEvent", "UnknownUserEvent"])
+        self.event_dispatch.unregister(self.register_reply, ["NameTakenEvent", "LoginTokenEvent"])
+        self.event_dispatch.unregister(self.challenge_response, ["LoggedInEvent", "LoginFailedEvent"])
 
     def render(self):
+        self.window.erase()
+        self.window.addstr(0, 0, "Login: ")
+        self.window.addstr(self.username)
+        if time.time() - self.message[1] < 1.0:
+            self.window.addstr(1, 0, self.message[0])
+        self.window.refresh()
+
+    def handle_input(self, event):
+        key = event.key
+        if ord('a') <= key <= ord('z') \
+            or ord('A') <= key <= ord('Z') \
+            or ord('0') <= key <= ord('9') \
+            or key in [ord(x) for x in "-_"]:
+            self.username += chr(key)
+        elif key == curses.KEY_BACKSPACE:
+            self.username = self.username[:-1]
+        elif key in (10, 13, curses.KEY_ENTER):
+            self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
+            if os.path.isfile(os.path.expanduser("~/.freecell_token")):
+                with open(os.path.expanduser("~/.freecell_token")) as token_file:
+                    self.token = token_file.read(16)
+                    self.event_dispatch.register(self.login_reply, ["NonceEvent", "UnknownUserEvent"])
+                    self.event_dispatch.send(LoginEvent(username=self.username))
+            else:
+                self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
+                self.event_dispatch.register(self.register_reply, ["NameTakenEvent", "LoginTokenEvent"])
+                self.event_dispatch.send(RegisterEvent(username=self.username))
+
+    def register_reply(self, event):
+        self.event_dispatch.unregister(self.register_reply, ["NameTakenEvent", "LoginTokenEvent"])
+        if isinstance(event, NameTakenEvent):
+            self.event_dispatch.register(self.handle_input, ["InputEvent"])
+            self.message = ("Name '%s' is already taken" % self.username, time.time())
+            self.username = ""
+        elif isinstance(event, LoginTokenEvent):
+            self.token = event.token
+            self.event_dispatch.register(self.login_reply, ["NonceEvent", "UnknownUserEvent"])
+            with open(os.path.expanduser("~/.freecell_token"), "w") as token_file:
+                token_file.write(self.token)
+            self.event_dispatch.send(LoginEvent(username=self.username))
+            self.message = ("Registered '%s' successfully" % self.username, time.time())
+
+    def login_reply(self, event):
+        self.event_dispatch.unregister(self.login_reply, ["NonceEvent", "UnknownUserEvent"])
+        if isinstance(event, UnknownUserEvent):
+            self.event_dispatch.register(self.handle_input, ["InputEvent"])
+            self.message = ("Unknown user '%s'" % self.username, time.time())
+            self.username = ""
+        elif isinstance(event, NonceEvent):
+            self.event_dispatch.register(self.challenge_response, ["LoggedInEvent", "LoginFailedEvent"])
+            nonce_hash = hashlib.sha256(hashlib.sha256(self.token+event.salt).hexdigest()+str(event.nonce)).hexdigest()
+            self.event_dispatch.send(TokenHashEvent(self.username, nonce_hash))
+            self.message = ("Nonce received, sending back hash", time.time())
+
+    def challenge_response(self, event):
+        self.event_dispatch.unregister(self.challenge_response, ["LoggedInEvent", "LoginFailedEvent"])
+        if isinstance(event, LoggedInEvent):
+            self.event_dispatch.send(ScreenChangeEvent(screen="load"))
+            self.message = ("Logged in with '%s'" % self.username, time.time())
+        elif isinstance(event, LoginFailedEvent):
+            self.event_dispatch.register(self.handle_input, ["InputEvent"])
+            self.message = ("Login failed with '%s'" % self.username, time.time())
+            self.username = ""
+
+
+class LoadGUI(GUIState):
+
+    def load(self):
+        self.event_dispatch.send(SeedRequestEvent())
+
         self.window.erase()
         self.window.addstr(0, 0, "Welcome to FREECELL")
         self.window.addstr(1, 0, "Loading seed....")
         self.window.refresh()
+
 
 class HelpGUI(GUIState):
     def __init__(self, window):

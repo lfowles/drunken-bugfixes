@@ -55,14 +55,24 @@ class FreecellConnection(asynchat.async_chat):
             print "Non-event message received"
 
     def create_event(self, message):
+        print message
         if message["event"] == "connect":
             self.event_dispatch.send(JoinEvent(id=self.id, version=message["version"], object=self))
         elif message["event"] == "stats":
             self.event_dispatch.send(WinEvent(id=self.id, seed=message["seed"], time=message["time"], moves=message["moves"], undos=message["undos"], won=message["won"]))
+        elif message["event"] == "tokenhash":
+            self.event_dispatch.send(TokenHashEvent(id=self.id, username=message["username"], nonce_hash=message["nonce_hash"]))
+        elif message["event"] == "login":
+            self.event_dispatch.send(LoginEvent(id=self.id, username=message["username"]))
+        elif message["event"] == "register":
+            self.event_dispatch.send(RegisterEvent(id=self.id, username=message["username"]))
+        elif message["event"] == "seedrequest":
+            self.event_dispatch.send(SeedRequestEvent(id=self.id))
 
     def send_json(self, obj):
         with self.lock:
             self.push(json.dumps(obj)+"\r\n")
+            print ">" + json.dumps(obj)
 
 class FreecellServer(asyncore.dispatcher):
     def __init__(self, host, port):

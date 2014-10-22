@@ -12,6 +12,19 @@ QuitEvent = namedtuple('QuitEvent', ['message'])
 MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
 SeedEvent = namedtuple('SeedEvent', ['seed'])
 Stats = namedtuple('Stats', ['seed', 'time', 'moves', 'undos', 'won'])
+BadVersionEvent = namedtuple('BadVersionEvent', ['min_version'])
+LoginEvent = namedtuple('LoginEvent', ['username'])
+UnknownUserEvent = namedtuple('UnknownUserEvent', ['username'])
+NonceEvent = namedtuple('NonceEvent', ['nonce', 'salt'])
+TokenHashEvent = namedtuple('TokenHashEvent', ['username', 'nonce_hash'])
+LoggedInEvent = namedtuple('LoggedInEvent', ['username'])
+LoginFailedEvent = namedtuple('LoginFailedEvent', ['username'])
+ScreenChangeEvent = namedtuple('ScreenChangeEvent', ['screen'])
+RegisterEvent = namedtuple('RegisterEvent', ['username'])
+NameTakenEvent = namedtuple('NameTakenEvent', ['username'])
+LoginTokenEvent = namedtuple('LoginTokenEvent', ['username', 'token'])
+SeedRequestEvent = namedtuple('SeedRequestEvent', [])
+
 
 class EventDispatch(object):
     def __init__(self):

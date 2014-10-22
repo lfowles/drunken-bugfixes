@@ -20,7 +20,7 @@ class FreeCellLogic(object):
         self.deck.shuffle(seed)
         self.table.setup(self.deck)
 
-        self.start = time.time()
+        self.start_time = time.time()
 
         self.history = []
         self.solved = False

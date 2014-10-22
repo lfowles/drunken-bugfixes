@@ -1,12 +1,20 @@
 import hashlib
+import os.path
+import pickle
 import random
 import string
 
 from events import event_dispatch, AuthEvent
 
-from ..shared.version import VERSION
+if os.path.isfile(os.path.expanduser("~/.freecell_logins")):
+    with open(os.path.expanduser("~/.freecell_logins")) as db_file:
+        USER_DATABASE = pickle.load(db_file)
+else:
+    USER_DATABASE = {}
 
-USER_DATABASE = {}
+def save_database():
+    with open(os.path.expanduser("~/.freecell_logins")) as db_file:
+        pickle.dump(USER_DATABASE, db_file)
 
 class LoginWrapper(object):
     def __init__(self, connection):
@@ -26,6 +34,7 @@ class LoginWrapper(object):
                 salt = ''.join(random.choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for x in range(16))
                 token = ''.join(random.choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for x in range(16))
                 USER_DATABASE[event.username] = (hashlib.sha256(token+salt).hexdigest(), salt)
+                save_database()
                 self.connection.send_json({"event":"logintoken", "username":event.username, "token": token})
 
     # LoginEvent(username)

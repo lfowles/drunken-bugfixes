@@ -30,7 +30,11 @@ class CompetitionServer(object):
         self.current_seed = random.randint(1, 0xFFFFFFFF)
 
     def start(self):
-        self.event_dispatch.register(self.handle_event, ["JoinEvent", "QuitEvent", "WinEvent", "AuthEvent", "SeedRequestEvent"])
+        self.event_dispatch.register(self.competitor_join, ["JoinEvent"])
+        self.event_dispatch.register(self.competitor_auth, ["AuthEvent"])
+        self.event_dispatch.register(self.competitor_quit, ["QuitEvent"])
+        self.event_dispatch.register(self.competitor_win, ["WinEvent"])
+        self.event_dispatch.register(self.send_seed, ["SeedRequestEvent"])
         MAX_FPS = 30
         S_PER_FRAME = 1.0/MAX_FPS
         self.shutdown_event.set()
@@ -44,22 +48,6 @@ class CompetitionServer(object):
             except KeyboardInterrupt:
                 print "Keyboard Interrupt"
                 self.shutdown_event.clear()
-
-    def handle_event(self, event):
-        if isinstance(event, JoinEvent):
-            self.competitor_join(event)
-
-        elif isinstance(event, QuitEvent):
-            self.competitor_quit(event)
-
-        elif isinstance(event, WinEvent):
-            self.competitor_win(event)
-
-        elif isinstance(event, AuthEvent):
-            self.competitor_auth(event)
-
-        elif isinstance(event, SeedRequestEvent):
-            self.send_seed(event)
 
     def competitor_win(self, event):
         print "WIN: %s" % event.id

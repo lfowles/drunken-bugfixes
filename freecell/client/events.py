@@ -12,6 +12,8 @@ QuitEvent = namedtuple('QuitEvent', ['message'])
 MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
 SeedEvent = namedtuple('SeedEvent', ['seed'])
 Stats = namedtuple('Stats', ['seed', 'time', 'moves', 'undos', 'won'])
+BadVersionEvent = namedtuple('BadVersionEvent', ['min_version'])
+
 
 class EventDispatch(object):
     def __init__(self):

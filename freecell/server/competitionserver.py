@@ -5,6 +5,8 @@ import events
 from events import *
 from network import FreecellServer
 
+from ..shared.version import VERSION
+
 class Competitor(object):
     def __init__(self, connection):
         """
@@ -26,6 +28,7 @@ class CompetitionServer(object):
         self.current_seed = random.randint(1, 0xFFFFFFFF)
 
     def start(self):
+        self.event_dispatch.register(self.handle_event, ["JoinEvent", "QuitEvent", "WinEvent"])
         MAX_FPS = 30
         S_PER_FRAME = 1.0/MAX_FPS
         self.shutdown_event.set()
@@ -58,8 +61,12 @@ class CompetitionServer(object):
 
     def competitor_join(self, event):
         print "JOIN: %s v%.2f" % (event.id, event.version)
-        self.competitors[event.id] = Competitor(event.object)
-        event.object.send({"event":"seed", "seed":self.current_seed})
+        competitor = Competitor(event.object)
+        self.competitors[event.id] = competitor
+        if event.version == VERSION:
+            competitor.send({"event":"seed", "seed":self.current_seed})
+        else:
+            competitor.send({"event":"badversion", "min_version":VERSION})
 
     def competitor_quit(self, event):
         print "QUIT: %s %s" % (event.id, event.reason)

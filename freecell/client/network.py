@@ -4,6 +4,8 @@ import json
 import socket
 import traceback
 
+from ..shared.version import VERSION
+
 from events import *
 
 # only add to event queue
@@ -48,7 +50,7 @@ class FreeCellNetworking(asynchat.async_chat):
     def handle_connect(self):
         self.state = "connected"
         self.event_dispatch.send(MessageEvent(level="networking", message="Connected"))
-        self.send_json({"event":"connect", "version": 0.1})
+        self.send_json({"event":"connect", "version": VERSION})
 
     def handle_error(self):
         traceback.print_exc()
@@ -60,11 +62,13 @@ class FreeCellNetworking(asynchat.async_chat):
         if "event" in message:
             if message["event"] == "seed":
                 self.event_dispatch.send(SeedEvent(seed=message["seed"]))
-            if message["event"] == "stats":
+            elif message["event"] == "stats":
                 if message["won"]:
                     self.event_dispatch.send(MessageEvent(level="", message="Player %s has WON after %d seconds, %d moves, %d undos." % (message["id"], message["time"], message["moves"], message["undos"])))
                 else:
                     self.event_dispatch.send(MessageEvent(level="", message="Player %s has conceded after %d seconds, %d moves, %d undos." % (message["id"], message["time"], message["moves"], message["undos"])))
+            elif message["event"] == "badversion":
+                self.event_dispatch.send(QuitEvent(message="Client version %s required" % message["min_version"]))
 
     def send_event(self, event):
         with self.lock:

@@ -1,1 +1,1 @@
-PYTHONPATH=. python bin/drunken-bugfixes.py $@
+PYTHONPATH=. bin/drunken-bugfixes.py $@

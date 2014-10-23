@@ -4,7 +4,7 @@ import pickle
 import random
 import string
 
-from events import event_dispatch, AuthEvent
+import events
 
 if os.path.isfile(os.path.expanduser("~/.freecell_logins")):
     with open(os.path.expanduser("~/.freecell_logins")) as db_file:
@@ -19,7 +19,7 @@ def save_database():
 class LoginWrapper(object):
     def __init__(self, connection):
         self.connection = connection
-        self.event_dispatch = event_dispatch
+        self.event_dispatch = events.event_dispatch
         self.nonce = random.randint(0, 0xFFFFFFFF)
 
         self.event_dispatch.register(self.login, ["LoginEvent"])
@@ -52,7 +52,7 @@ class LoginWrapper(object):
             nonce_hash = hashlib.sha256(USER_DATABASE[event.username][0]+str(self.nonce)).hexdigest()
             if nonce_hash == event.nonce_hash:
                 self.connection.send_json({"event":"loggedin", "username":event.username})
-                self.event_dispatch.send(AuthEvent(id=self.connection.id, connection=self.connection))
+                self.event_dispatch.send(events.make_event('AuthEvent', id=self.connection.id, connection=self.connection))
             else:
                 self.connection.send_json({"event":"loginfailed", "username":event.username})
             self.event_dispatch.unregister(self.response, ["TokenHashEvent"])

@@ -1,8 +1,8 @@
+import threading
+import time
 import random
 
 import events
-
-from events import *
 from loginserver import LoginWrapper
 from network import FreecellServer
 
@@ -58,6 +58,7 @@ class CompetitionServer(object):
             competitor.send({"event":"stats", "id":event.id, "seed":event.seed, "time":event.time, "moves":event.moves, "undos":event.undos, "won":event.won})
 
     def competitor_join(self, event):
+
         print "JOIN: %s v%.2f" % (event.id, event.version)
 
         if event.version == VERSION:

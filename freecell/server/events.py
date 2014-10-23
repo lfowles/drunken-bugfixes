@@ -1,25 +1,79 @@
+import json
+import keyword
 import Queue
 import threading
 import time
 
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 
-# TODO: event prototypes in shared, then a ServerEvent type object that will create event objects
+event_prototypes = [
+    {'event':'JoinEvent', 'version':float, 'object':None},
+    {'event':'AuthEvent', 'connection':None},
+    {'event':'WinEvent', 'seed':int, 'time':float, 'moves':int, 'undos':int, 'won':bool},
+    {'event':'QuitEvent', 'reason':basestring},
 
-JoinEvent = namedtuple('JoinEvent', ['id', 'version', 'object'])
-QuitEvent = namedtuple('QuitEvent', ['id', 'reason'])
-WinEvent = namedtuple('WinEvent', ['id', 'seed', 'time', 'moves', 'undos', 'won'])
-SeedEvent = namedtuple('SeedEvent', ['seed'])
-MessageEvent = namedtuple('MessageEvent', ['level', 'message'])
+    {'event':'LoginEvent', 'username':basestring},
+    {'event':'RegisterEvent', 'username':basestring},
+    {'event':'NameTakenEvent', 'username':basestring},
+    {'event':'LoginTokenEvent', 'username':basestring, 'token':basestring},
+    {'event':'TokenHashEvent', 'username':basestring, 'nonce_hash':basestring},
 
-AuthEvent = namedtuple('AuthEvent', ['id', 'connection'])
-RegisterEvent = namedtuple('RegisterEvent', ['id', 'username'])
-NameTakenEvent = namedtuple('NameTakenEvent', ['id', 'username'])
-LoginTokenEvent = namedtuple('LoginTokenEvent', ['id', 'username', 'token'])
-TokenHashEvent = namedtuple('TokenHashEvent', ['id', 'username', 'nonce_hash'])
-LoginEvent = namedtuple('LoginEvent', ['id', 'username'])
-SeedRequestEvent = namedtuple('SeedRequestEvent', ['id'])
+    {'event':'SeedRequestEvent'},
+    ]
 
+events = {}
+""":type : dict[str, ServerEvent] """
+
+# Change event to event_type
+class ServerEvent(object):
+    prototype = {}
+    event = None
+    def __init__(self, **kwargs):
+        if "event" in kwargs:
+            if self.event != kwargs["event"]:
+                raise TypeError("Unable to create '%s' object from '%s' data" % (self.event, kwargs["event"]))
+            del kwargs["event"]
+
+        if not sorted(kwargs.keys()) == sorted(self.prototype.keys()):
+            raise TypeError('Required args: %s, Provided args: %s' %
+                            (", ".join(self.prototype.keys()), ", ".join(kwargs.keys()))
+                            )
+
+        for key, arg_type in self.prototype.items():
+            if arg_type is not None:
+                if not isinstance(kwargs[key], arg_type):
+                    raise TypeError("Arg '%s' must be of type %s" % (key, arg_type.__name__))
+
+        self.__dict__.update(kwargs)
+
+    def serialize(self):
+        ser_dict = {key: self.__dict__[key] for key in self.prototype.keys()}
+        ser_dict["event"] = self.event
+        return json.dumps(ser_dict)
+
+def server_event_creator(event_prototype):
+    assert "event" in event_prototype
+    for attr in event_prototype:
+        assert not keyword.iskeyword(attr)
+        assert attr not in ["prototype", "id", "origin"]
+
+    event_type = event_prototype["event"]
+    assert event_type not in events
+
+    # Add server specific args
+    #event_prototype.update({"id":str, "origin":str})
+    event_prototype.update({"id":str})
+    del event_prototype["event"] # remove "event" from the prototype, the class already knows what type it is
+    class_dict = {"prototype": event_prototype, "event":event_type}
+    class_dict.update(event_prototype)
+
+    Cls = type(event_type, (ServerEvent,), class_dict)
+
+    events[event_type] = Cls
+
+def make_event(event_type, **kwargs):
+    Cls = events[event_type]
+    return Cls(**kwargs)
 
 class EventDispatch(object):
     def __init__(self):
@@ -68,5 +122,8 @@ class EventDispatch(object):
                 return False
         else:
             return True
+
+for event in event_prototypes:
+    server_event_creator(event)
 
 event_dispatch = EventDispatch()

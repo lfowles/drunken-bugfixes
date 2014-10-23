@@ -5,10 +5,10 @@ import random
 import socket
 import string
 import threading
+import time
 import traceback
 
 import events
-from events import *
 
 class FreecellConnection(asynchat.async_chat):
     def __init__(self, sock, addr, lock):
@@ -31,14 +31,14 @@ class FreecellConnection(asynchat.async_chat):
 
     def handle_close(self):
         if self.state != "disconnected":
-            self.event_dispatch.send(QuitEvent(id=self.id, reason="Client disconnected"))
+            self.event_dispatch.send(events.make_event('QuitEvent', id=self.id, reason="Client disconnected"))
             self.state = "disconnected"
 
     def handle_error(self):
         traceback.print_exc()
 
         if self.state != "disconnected":
-            self.event_dispatch.send(QuitEvent(id=self.id, reason="Exception occurred"))
+            self.event_dispatch.send(events.make_event('QuitEvent', id=self.id, reason="Exception occurred"))
             self.state = "disconnected"
             self.close()
 
@@ -57,17 +57,17 @@ class FreecellConnection(asynchat.async_chat):
     def create_event(self, message):
         print message
         if message["event"] == "connect":
-            self.event_dispatch.send(JoinEvent(id=self.id, version=message["version"], object=self))
+            self.event_dispatch.send(events.make_event('JoinEvent', id=self.id, version=message["version"], object=self))
         elif message["event"] == "stats":
-            self.event_dispatch.send(WinEvent(id=self.id, seed=message["seed"], time=message["time"], moves=message["moves"], undos=message["undos"], won=message["won"]))
+            self.event_dispatch.send(events.make_event('WinEvent', id=self.id, seed=message["seed"], time=message["time"], moves=message["moves"], undos=message["undos"], won=message["won"]))
         elif message["event"] == "tokenhash":
-            self.event_dispatch.send(TokenHashEvent(id=self.id, username=message["username"], nonce_hash=message["nonce_hash"]))
+            self.event_dispatch.send(events.make_event('TokenHashEvent', id=self.id, username=message["username"], nonce_hash=message["nonce_hash"]))
         elif message["event"] == "login":
-            self.event_dispatch.send(LoginEvent(id=self.id, username=message["username"]))
+            self.event_dispatch.send(events.make_event('LoginEvent', id=self.id, username=message["username"]))
         elif message["event"] == "register":
-            self.event_dispatch.send(RegisterEvent(id=self.id, username=message["username"]))
+            self.event_dispatch.send(events.make_event('RegisterEvent', id=self.id, username=message["username"]))
         elif message["event"] == "seedrequest":
-            self.event_dispatch.send(SeedRequestEvent(id=self.id))
+            self.event_dispatch.send(events.make_event('SeedRequestEvent', id=self.id))
 
     def send_json(self, obj):
         with self.lock:

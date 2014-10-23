@@ -22,10 +22,10 @@ event_prototypes = [
     ]
 
 events = {}
-""":type : dict[str, ServerEvent] """
+""":type : dict[str, Event] """
 
 # Change event to event_type
-class ServerEvent(object):
+class Event(object):
     prototype = {}
     event = None
     def __init__(self, **kwargs):

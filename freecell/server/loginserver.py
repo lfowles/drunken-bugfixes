@@ -13,7 +13,7 @@ else:
     USER_DATABASE = {}
 
 def save_database():
-    with open(os.path.expanduser("~/.freecell_logins")) as db_file:
+    with open(os.path.expanduser("~/.freecell_logins"), "w") as db_file:
         pickle.dump(USER_DATABASE, db_file)
 
 class LoginWrapper(object):

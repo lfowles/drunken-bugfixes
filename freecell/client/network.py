@@ -31,14 +31,16 @@ class FreeCellNetworking(asynchat.async_chat):
         shutdown_event.wait()
         self.event_dispatch.register(self.send_event, ["Stats", "LoginEvent", "RegisterEvent", "TokenHashEvent", "SeedRequestEvent"])
         while shutdown_event.is_set():
+            MAX_FPS = 30
+            S_PER_FRAME = 1.0/MAX_FPS
             start = time.time()
 
             with self.lock:
-                asyncore.loop(timeout=.1, count=1)
+                asyncore.loop(timeout=0, count=1)
 
             elapsed = time.time()-start
-            if elapsed < .2:
-                time.sleep(.2-elapsed)
+            if elapsed < S_PER_FRAME:
+                time.sleep(S_PER_FRAME-elapsed)
         self.event_dispatch.unregister(self.send_event, ["Stats", "LoginEvent", "RegisterEvent", "TokenHashEvent", "SeedRequestEvent"])
         self.close_when_done()
 

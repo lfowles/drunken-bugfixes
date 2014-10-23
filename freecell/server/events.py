@@ -67,7 +67,7 @@ def server_event_creator(event_prototype):
     class_dict = {"prototype": event_prototype, "event":event_type}
     class_dict.update(event_prototype)
 
-    Cls = type(event_type, (ServerEvent,), class_dict)
+    Cls = type(event_type, (Event,), class_dict)
 
     events[event_type] = Cls
 

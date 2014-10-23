@@ -210,29 +210,26 @@ class FreeCellLogic(object):
         :param MoveEvent move_event: Move Event
         :rtype: bool
         """
-        self.push_undo()
 
         if move_event.dest == "T":
-            self.pop_undo(auto=True)
             return self.fill_cells(move_event)
 
         if move_event.num > 1:
             # Really, all of these moves should be handled outside.
             # Maybe have the GUI call a movebot to generate this given the state.
             if move_event.dest.startswith("C"):
-                self.pop_undo(auto=True)
                 return self.make_supermove(move_event)
             else:
                 # Not going to allow moving a stack to the foundation. It might not even be possible?
                 # Doesn't make sense to try and move a stack to a singular free cell either.
-                self.pop_undo(auto=True)
                 return False
 
         card = self.table.get_card(move_event.source)
 
         if card is None: # Can't move a nothing
-            self.pop_undo(auto=True)
             return False
+
+        self.push_undo()
 
         valid = False
         dest_card = self.table.get_card(move_event.dest)

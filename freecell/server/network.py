@@ -93,9 +93,16 @@ class FreecellServer(asyncore.dispatcher):
     def run(self, shutdown_event):
         shutdown_event.wait()
         while shutdown_event.is_set():
+            MAX_FPS = 30
+            S_PER_FRAME = 1.0/MAX_FPS
+            start = time.time()
             with self.lock:
-                asyncore.loop(timeout=.1, count=1)
+                asyncore.loop(timeout=0, count=1)
                 self.update_connections()
+
+            elapsed = time.time()-start
+            if elapsed < S_PER_FRAME:
+                time.sleep(S_PER_FRAME-elapsed)
 
         for connection in self.connections.values():
             connection.close_when_done()

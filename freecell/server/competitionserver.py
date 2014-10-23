@@ -51,7 +51,8 @@ class CompetitionServer(object):
 
     def competitor_win(self, event):
         print "WIN: %s" % event.id
-        self.current_seed = random.randint(1, 0xFFFFFFFF)
+        if event.won:
+            self.current_seed = random.randint(1, 0xFFFFFFFF)
         for competitor in self.competitors.values():
             #WinEvent = namedtuple('WinEvent', ['id', 'seed', 'time', 'moves', 'undos', 'won'])
             competitor.send({"event":"stats", "id":event.id, "seed":event.seed, "time":event.time, "moves":event.moves, "undos":event.undos, "won":event.won})

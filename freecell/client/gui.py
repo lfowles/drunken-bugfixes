@@ -232,12 +232,14 @@ class GameGUI(GUIState):
         self.event_dispatch.register(self.handle_input, ["InputEvent"])
         self.event_dispatch.register(self.pause_input, ["InputFlowEvent"])
         self.event_dispatch.register(self.display_message, ["MessageEvent"])
+        self.event_dispatch.register(self.display_leader, ["LeaderEvent"])
 
     def unload(self):
         self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
         self.event_dispatch.unregister(self.pause_input, ["InputFlowEvent"])
         self.event_dispatch.unregister(self.display_message, ["MessageEvent"])
         self.event_dispatch.unregister(self.buffer_input, ["InputEvent"])
+        self.event_dispatch.unregister(self.display_leader, ["LeaderEvent"])
 
     def render(self):
         self.render_base()
@@ -443,4 +445,11 @@ class GameGUI(GUIState):
             self.window.refresh()
             time.sleep(.1)
 
+        self.window.move(5 + self.logic.table.height(), 43)
+
+    def display_leader(self, event):
+        self.window.addstr(7+self.logic.table.height(), 0, "Leader: %s at %.2f seconds, %d moves, %d undos" % (event.username, event.time, event.moves, event.undos))
+        self.window.refresh()
+        time.sleep(2.5)
+        self.window.deleteln()
         self.window.move(5 + self.logic.table.height(), 43)

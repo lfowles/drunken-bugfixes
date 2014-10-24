@@ -90,6 +90,8 @@ class FreeCellNetworking(asynchat.async_chat):
                 self.event_dispatch.send(LoggedInEvent(username=message["username"]))
             elif message["event"] == "loginfailed":
                 self.event_dispatch.send(LoginFailedEvent(username=message["username"]))
+            elif message["event"] == "leader":
+                self.event_dispatch.send(LeaderEvent(username=message["username"], time=message["time"], moves=message["moves"], undos=message["undos"]))
 
     def send_event(self, event):
         with self.lock:

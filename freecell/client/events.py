@@ -25,6 +25,7 @@ NameTakenEvent = namedtuple('NameTakenEvent', ['username'])
 LoginTokenEvent = namedtuple('LoginTokenEvent', ['username', 'token'])
 SeedRequestEvent = namedtuple('SeedRequestEvent', [])
 InputFlowEvent = namedtuple('InputFlowEvent', ['buffer', 'pause'])
+LeaderEvent = namedtuple('LeaderEvent', ['username', 'moves', 'time', 'undos'])
 
 class EventDispatch(object):
     def __init__(self):

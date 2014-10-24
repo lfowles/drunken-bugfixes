@@ -8,7 +8,7 @@ from collections import defaultdict
 
 event_prototypes = [
     {'event':'JoinEvent', 'version':float, 'object':None},
-    {'event':'AuthEvent', 'connection':None},
+    {'event':'AuthEvent', 'connection':None, 'username':basestring},
     {'event':'WinEvent', 'seed':int, 'time':float, 'moves':int, 'undos':int, 'won':bool},
     {'event':'QuitEvent', 'reason':basestring},
 

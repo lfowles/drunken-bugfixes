@@ -52,7 +52,7 @@ class LoginWrapper(object):
             nonce_hash = hashlib.sha256(USER_DATABASE[event.username][0]+str(self.nonce)).hexdigest()
             if nonce_hash == event.nonce_hash:
                 self.connection.send_json({"event":"loggedin", "username":event.username})
-                self.event_dispatch.send(events.make_event('AuthEvent', id=self.connection.id, connection=self.connection))
+                self.event_dispatch.send(events.make_event('AuthEvent', id=self.connection.id, connection=self.connection, username=event.username))
             else:
                 self.connection.send_json({"event":"loginfailed", "username":event.username})
             self.event_dispatch.unregister(self.response, ["TokenHashEvent"])

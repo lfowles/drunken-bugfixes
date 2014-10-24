@@ -65,10 +65,10 @@ class FreeCellGame(object):
 
     def handle_input(self, event):
         if event.key == ord('?'):
-            width = 38
-            height = 7
-            y = 4
-            x = 3
+            width = 44
+            height = 12
+            y = 1
+            x = 0
             import curses
             win = curses.newwin(height, width, y, x)
             self.gui.set_screen("help")

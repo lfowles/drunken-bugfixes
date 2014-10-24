@@ -5,7 +5,7 @@ import os.path
 from events import *
 import events
 from input import CursesInput
-
+from ..shared.version import VERSION
 
 ColumnSelection = namedtuple('ColumnSelection', ['col','num'])
 CellSelection = namedtuple('CellSelection', ['cell'])
@@ -177,12 +177,28 @@ class HelpGUI(GUIState):
         GUIState.__init__(self, window)
         self.page_num = 0
 
+
         self.help_text = [
-            ("""This is the first window\n"""
-             """Put some text here"""),
-            ("""This is the second window\n"""
-             """More text goes here\n"""
-             """And some more here""")
+            ("""              freecell  help              \n"""
+             """                                          \n"""
+             """                game rules                \n"""
+             """  https://en.wikipedia.org/wiki/FreeCell  \n"""
+             """                                          \n"""
+             """                 feedback                 \n"""
+             """      github: http://git.io/freecell      \n"""
+             """   email: {bugs, features, github} -at-   \n"""
+             """   knitwithlogic.com subject: freecell:   \n"""
+             """v%r           p 1/4 [n]ext         e[x]it""" % VERSION),
+            ("""              freecell  help              \n"""
+             """                                          \n"""
+             """                                          \n"""
+             """                                          \n"""
+             """                                          \n"""
+             """                                          \n"""
+             """                                          \n"""
+             """                                          \n"""
+             """                                          \n"""
+             """v%r           p 2/4 [n]ext         e[x]it""" % VERSION)
         ]
 
     def load(self):
@@ -190,18 +206,22 @@ class HelpGUI(GUIState):
 
     def unload(self):
         self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
+        self.page_num = 0
 
     def set_window(self, window):
         self.window = window
 
     def handle_input(self, event):
-        if event.key == ord(' '):
+        if event.key == ord('n'):
             self.page_num += 1
+        elif event.key == ord('x'):
+            self.event_dispatch.send(ScreenChangeEvent(screen="game"))
+            self.window.refresh()
 
     def render(self):
 
         self.window.erase()
-        self.window.border('|','|','-','-','/','\\','\\','/')
+        self.window.border('|', '|', '_', '-', ' ', ' ', '\'', '\'')
 
         self.display_page(self.page_num)
         self.window.refresh()

@@ -423,6 +423,8 @@ class GameGUI(GUIState):
         if dest == "F":
             # Get suite
             card = self.logic.table.get_card(source)
+            if card is None: # Can't move nothing to the foundation or even attempt
+                return
             dest = "F%s" % card.suite
 
         self.event_dispatch.send(InputFlowEvent(buffer=True, pause=True), priority=1)

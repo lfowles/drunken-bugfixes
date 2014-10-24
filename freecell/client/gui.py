@@ -1,5 +1,6 @@
 import curses
 import hashlib
+import json
 import os.path
 
 from events import *
@@ -114,13 +115,21 @@ class LoginGUI(GUIState):
             self.username = self.username[:-1]
         elif key in (10, 13, curses.KEY_ENTER):
             self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
+            has_token = False
             if os.path.isfile(os.path.expanduser("~/.freecell_token")):
-                with open(os.path.expanduser("~/.freecell_token")) as token_file:
-                    self.token = token_file.read(16)
-                    self.event_dispatch.register(self.login_reply, ["NonceEvent", "UnknownUserEvent"])
-                    self.event_dispatch.send(LoginEvent(username=self.username))
+                with open(os.path.expanduser("~/.freecell_token"), "r+") as token_file:
+                    try:
+                        accounts = json.load(token_file)
+                        if self.username in accounts:
+                            has_token = True
+                            self.token = accounts[self.username]
+                    except ValueError: # Old style token file
+                        token_file.seek(0)
+                        json.dump({}, token_file)
+            if has_token:
+                self.event_dispatch.register(self.login_reply, ["NonceEvent", "UnknownUserEvent"])
+                self.event_dispatch.send(LoginEvent(username=self.username))
             else:
-                self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
                 self.event_dispatch.register(self.register_reply, ["NameTakenEvent", "LoginTokenEvent"])
                 self.event_dispatch.send(RegisterEvent(username=self.username))
 
@@ -133,8 +142,13 @@ class LoginGUI(GUIState):
         elif isinstance(event, LoginTokenEvent):
             self.token = event.token
             self.event_dispatch.register(self.login_reply, ["NonceEvent", "UnknownUserEvent"])
-            with open(os.path.expanduser("~/.freecell_token"), "w") as token_file:
-                token_file.write(self.token)
+            accounts = {}
+            if os.path.isfile(os.path.expanduser("~/.freecell_token")):
+                with open(os.path.expanduser("~/.freecell_token"), "r+") as token_file:
+                    accounts = json.load(token_file)
+                    token_file.seek(0)
+                    accounts[self.username] = event.token
+                    token_file.write(json.dumps(accounts))
             self.event_dispatch.send(LoginEvent(username=self.username))
             self.message = ("Registered '%s' successfully" % self.username, time.time())
 

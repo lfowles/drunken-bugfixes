@@ -24,7 +24,7 @@ RegisterEvent = namedtuple('RegisterEvent', ['username'])
 NameTakenEvent = namedtuple('NameTakenEvent', ['username'])
 LoginTokenEvent = namedtuple('LoginTokenEvent', ['username', 'token'])
 SeedRequestEvent = namedtuple('SeedRequestEvent', [])
-
+InputFlowEvent = namedtuple('InputFlowEvent', ['buffer', 'pause'])
 
 class EventDispatch(object):
     def __init__(self):

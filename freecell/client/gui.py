@@ -218,6 +218,7 @@ class HelpGUI(GUIState):
 class GameGUI(GUIState):
     def __init__(self, window, logic):
         GUIState.__init__(self, window)
+        self.input_buffer = []
         self.logic = logic
         self.face_dir = 1
 
@@ -229,11 +230,14 @@ class GameGUI(GUIState):
 
     def load(self):
         self.event_dispatch.register(self.handle_input, ["InputEvent"])
+        self.event_dispatch.register(self.pause_input, ["InputFlowEvent"])
         self.event_dispatch.register(self.display_message, ["MessageEvent"])
 
     def unload(self):
         self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
+        self.event_dispatch.unregister(self.pause_input, ["InputFlowEvent"])
         self.event_dispatch.unregister(self.display_message, ["MessageEvent"])
+        self.event_dispatch.unregister(self.buffer_input, ["InputEvent"])
 
     def render(self):
         self.render_base()
@@ -389,6 +393,23 @@ class GameGUI(GUIState):
         if reset_num:
             self.select_num = 0
 
+    def pause_input(self, event):
+        if not event.pause:
+            self.flush_input_buffer()
+            self.event_dispatch.unregister(self.buffer_input, ["InputEvent"])
+            self.event_dispatch.register(self.handle_input, ["InputEvent"])
+        else:
+            self.event_dispatch.unregister(self.handle_input, ["InputEvent"])
+            if event.buffer:
+                self.event_dispatch.register(self.buffer_input, ["InputEvent"])
+
+    def buffer_input(self, event):
+        self.input_buffer.append(event)
+
+    def flush_input_buffer(self):
+        for event in self.input_buffer:
+            self.event_dispatch.send(event, priority=2)
+
     def create_move(self, dest):
         assert self.selected is not None
 
@@ -404,9 +425,11 @@ class GameGUI(GUIState):
             card = self.logic.table.get_card(source)
             dest = "F%s" % card.suite
 
+        self.event_dispatch.send(InputFlowEvent(buffer=True, pause=True), priority=1)
         move = MoveEvent(source=source, dest=dest, num=num)
         self.event_dispatch.send(move)
         self.event_dispatch.send(MoveCompleteEvent(unused=""))
+        self.event_dispatch.send(InputFlowEvent(buffer=True, pause=False))
         self.selected = None
 
     def display_message(self, event):

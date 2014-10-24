@@ -1,6 +1,0 @@
-Copyright (C) 2014 Landon Fowles <landon@knitwithlogic.com>
-
-This program has been released under an MIT license with the permission of Linus Akesson.
-
-Reimplementation of:
-freecell.c (Copyright 2007 Linus Akesson), which can be found at: http://www.linusakesson.net/software/freecell.php

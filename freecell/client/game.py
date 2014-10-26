@@ -1,3 +1,4 @@
+import curses
 import Queue
 import random
 
@@ -7,6 +8,8 @@ from gui import FreeCellGUI
 from logic import FreeCellLogic
 from network import FreeCellNetworking
 
+from freecellgameview import FreecellGameView
+from mainmenuview import MainMenuView
 
 class FreeCellGame(object):
     def __init__(self, seed=None, debug=False, networking=False):
@@ -19,6 +22,7 @@ class FreeCellGame(object):
         self.logic = FreeCellLogic()
         self.gui = FreeCellGUI(self.logic)
         self.input = self.gui.get_input()
+        self.views = []
         self.stats = None
         self.seed = None
         self.debug = debug
@@ -42,8 +46,16 @@ class FreeCellGame(object):
             from pydevd import pydevd
             from debug import DEBUG_HOST, DEBUG_PORT
             pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
+
         if self.networking is not None:
-            self.event_dispatch.send(ScreenChangeEvent(screen="login"))
+            main_menu = MainMenuView(stdscr)
+            main_menu.load()
+            self.views.append(main_menu)
+            self.event_dispatch.register(self.state_change, ["NameEnteredEvent"])
+        else:
+            game_view = FreecellGameView(stdscr, self.logic.table, self.logic)
+            game_view.load()
+            self.views.append(game_view)
 
         self.event_dispatch.register(self.finish, ["FinishEvent"])
         self.event_dispatch.register(self.quit, ["QuitEvent"])
@@ -56,6 +68,17 @@ class FreeCellGame(object):
         self.input.start(stdscr)
         self.gui.start(stdscr)
         self.game_loop()
+
+    def state_change(self, event):
+        if isinstance(event, NameEnteredEvent):
+            # View right now is only MainMenuView, so switch to FreecellHumanGameView
+            # change window
+            main_menu = self.views.pop()
+            main_menu.unload()
+            game_view = FreecellGameView(main_menu.window, self.logic.table, self.logic)
+            game_view.load()
+            self.views.append(game_view)
+        # TODO: register for WinEvent too
 
     def set_seed(self, event):
         self.state = "seeded"
@@ -70,27 +93,45 @@ class FreeCellGame(object):
             y = 4
             x = 3
             import curses
-            win = curses.newwin(height, width, y, x)
-            self.gui.set_screen("help")
-            self.gui.screens[self.gui.screen].set_window(win)
+#            win = curses.newwin(height, width, y, x)
+#            self.gui.set_screen("help")
+#            self.gui.screens[self.gui.screen].set_window(win)
         elif event.key == ord('Q'):
             self.event_dispatch.send(FinishEvent(won=False))
 
     def game_loop(self):
         MAX_FPS = 30
         S_PER_FRAME = 1.0/MAX_FPS
+        start = time.time()
+
         while self.shutdown_event.is_set():
-            start = time.time()
             try:
-                self.event_dispatch.update(.1)
-                # TODO: have GUI only render on changed screen
-                self.gui.render()
+                elapsed = time.time() - start
+                start += elapsed
+
+                self.event_dispatch.update(S_PER_FRAME)
+
+                for view in self.views:
+                    view.update(elapsed)
+                for view in self.views:
+                    if hasattr(view, 'window'):
+                        with self.gui.lock:
+                            # need to erase all windows needed :\ this will become an issue when I redo the help window
+                            view.window.erase()
+                            window_list = view.render(elapsed)
+                            for window in window_list:
+                                window.refresh()
+                # Remake this to be
+                # Views can contain UIs
+                # init a mainmenuview on load
+                # game.onupdate which calls views.onupdate which calls processmanager.onupdate
+                #                                          which calls screen elements render ( screen elements are the various popups, board gui, etc and are rendered on top of each other)
                 elapsed = time.time() - start
                 if elapsed < S_PER_FRAME:
                     time.sleep(S_PER_FRAME-elapsed)
+
             except KeyboardInterrupt:
                 self.event_dispatch.send(FinishEvent(won=False), priority=1)
-
 
     def finish(self, event):
         if self.seed is not None:

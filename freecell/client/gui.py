@@ -23,7 +23,7 @@ class FreeCellGUI(object):
         self.lock = threading.Lock()
         self.input = CursesInput(self.lock)
 
-        self.event_dispatch.register(self.set_screen_event, ["ScreenChangeEvent"])
+        #self.event_dispatch.register(self.set_screen_event, ["ScreenChangeEvent"])
 
     def get_input(self):
         return self.input
@@ -332,6 +332,8 @@ class GameGUI(GUIState):
         self.window.addstr(str(card))
         self.window.attrset(curses.A_NORMAL)
 
+
+    # put this in a "Controller" class and have the GUI be a "View" class
     def handle_input(self, event):
         reset_num = True
         key = event.key
@@ -444,3 +446,4 @@ class GameGUI(GUIState):
             time.sleep(.1)
 
         self.window.move(5 + self.logic.table.height(), 43)
+

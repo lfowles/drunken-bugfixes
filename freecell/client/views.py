@@ -5,6 +5,7 @@
 # Process Manager
 # Options
 from events import event_dispatch
+from process import ProcessManager
 
 class GameView(object):
     def __init__(self):
@@ -23,6 +24,7 @@ class HumanView(GameView):
         super(HumanView, self).__init__()
         self.window = window
         self.screens = []
+        self.processes = ProcessManager()
 
     def load(self):
         event_dispatch.register(self.keypress, ["InputEvent"])
@@ -32,7 +34,7 @@ class HumanView(GameView):
 
     def update(self, elapsed):
         super(HumanView, self).update(elapsed)
-        # update process manager in here?
+        self.processes.update(elapsed)
         # this mainly updates visual effects, nothing to do with game logic
         for screen in self.screens:
             screen.update(elapsed)

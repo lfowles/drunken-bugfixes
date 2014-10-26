@@ -27,10 +27,6 @@ LoginTokenEvent = namedtuple('LoginTokenEvent', ['username', 'token'])
 SeedRequestEvent = namedtuple('SeedRequestEvent', [])
 InputFlowEvent = namedtuple('InputFlowEvent', ['buffer', 'pause'])
 
-
-# newstyle events follow
-NameEnteredEvent = namedtuple('NameEnteredEvent', ['name'])
-
 Callback = namedtuple('Callback', ['fn', 'obj'])
 
 class EventDispatch(object):

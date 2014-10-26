@@ -10,6 +10,7 @@ class FreeCellLogic(object):
         self.deck = Deck()
         self.table = Tableau()
         self.event_dispatch = events.event_dispatch
+        self.seed = 0
 
     def start(self):
         self.event_dispatch.register(self.process_move, ["MoveEvent"])

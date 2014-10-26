@@ -4,9 +4,9 @@ import random
 
 import events
 from events import *
-from gui import FreeCellGUI
 from logic import FreeCellLogic
 from network import FreeCellNetworking
+from input import CursesInput
 
 from freecellgameview import FreecellGameView
 from mainmenuview import MainMenuView
@@ -20,8 +20,8 @@ class FreeCellGame(object):
         """
         self.event_dispatch = events.event_dispatch
         self.logic = FreeCellLogic()
-        self.gui = FreeCellGUI(self.logic)
-        self.input = self.gui.get_input()
+        self.curses_lock = threading.Lock()
+        self.input = CursesInput(self.curses_lock)
         self.views = []
         self.stats = None
         self.seed = None
@@ -43,15 +43,18 @@ class FreeCellGame(object):
 
     def start(self, stdscr):
         if self.debug:
-            from pydevd import pydevd
-            from debug import DEBUG_HOST, DEBUG_PORT
-            pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
+            try:
+                from pydevd import pydevd
+                from debug import DEBUG_HOST, DEBUG_PORT
+                pydevd.settrace(DEBUG_HOST, port=DEBUG_PORT, suspend=False)
+            except ImportError:
+                pass # Can't debug if pydevd or debug don't exist, so whatever
 
         if self.networking is not None:
             main_menu = MainMenuView(stdscr)
             main_menu.load()
             self.views.append(main_menu)
-            self.event_dispatch.register(self.state_change, ["NameEnteredEvent"])
+            self.event_dispatch.register(self.state_change, ["LoggedInEvent"])
         else:
             game_view = FreecellGameView(stdscr, self.logic.table, self.logic)
             game_view.load()
@@ -66,25 +69,46 @@ class FreeCellGame(object):
         self.shutdown_event.set()
         self.logic.start()
         self.input.start(stdscr)
-        self.gui.start(stdscr)
+        self.curses_init()
         self.game_loop()
 
+    def curses_init(self):
+        with self.curses_lock:
+            curses.curs_set(0)
+            curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
+
+            # selected
+            curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLUE)
+            curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLUE)
+
+            curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+
+            # can automove
+            curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_RED)
+            curses.init_pair(6, curses.COLOR_CYAN, curses.COLOR_RED)
+
+            # stacked correctly
+            curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_GREEN)
+            curses.init_pair(8, curses.COLOR_CYAN, curses.COLOR_GREEN)
+
     def state_change(self, event):
-        if isinstance(event, NameEnteredEvent):
-            # View right now is only MainMenuView, so switch to FreecellHumanGameView
-            # change window
-            main_menu = self.views.pop()
-            main_menu.unload()
-            game_view = FreecellGameView(main_menu.window, self.logic.table, self.logic)
-            game_view.load()
-            self.views.append(game_view)
+        if isinstance(event, LoggedInEvent):
+            self.event_dispatch.register(self.set_seed, ["SeedEvent"])
+            self.event_dispatch.send(SeedRequestEvent())
+
         # TODO: register for WinEvent too
 
     def set_seed(self, event):
         self.state = "seeded"
         self.seed = event.seed
         self.logic.load_seed(self.seed)
-        self.event_dispatch.send(ScreenChangeEvent(screen="game"))
+        # View right now is only MainMenuView, so switch to FreecellHumanGameView
+        # change window
+        main_menu = self.views.pop()
+        main_menu.unload()
+        game_view = FreecellGameView(main_menu.window, self.logic.table, self.logic)
+        game_view.load()
+        self.views.append(game_view)
 
     def handle_input(self, event):
         if event.key == ord('?'):
@@ -115,7 +139,7 @@ class FreeCellGame(object):
                     view.update(elapsed)
                 for view in self.views:
                     if hasattr(view, 'window'):
-                        with self.gui.lock:
+                        with self.curses_lock:
                             # need to erase all windows needed :\ this will become an issue when I redo the help window
                             view.window.erase()
                             window_list = view.render(elapsed)

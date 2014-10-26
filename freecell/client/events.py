@@ -36,9 +36,16 @@ Callback = namedtuple('Callback', ['fn', 'obj'])
 class EventDispatch(object):
     def __init__(self):
         self.queue = Queue.PriorityQueue()
-        self.registered = defaultdict(list)
+        self.registered = defaultdict(set)
         """:type : defaultdict[str, list]"""
         self.lock = threading.Lock()
+
+    def make_callback(self, callback):
+        try:
+            callback = Callback(fn=weakref.ref(callback.__func__), obj=weakref.ref(callback.__self__))
+        except AttributeError:
+            callback = Callback(fn=weakref.ref(callback.__func__), obj=None)
+        return callback
 
     def register(self, callback, event_types):
         """
@@ -46,12 +53,9 @@ class EventDispatch(object):
         :param list[str] event_types: List of event types (as strings)
         """
         with self.lock:
+            callback = self.make_callback(callback)
             for event_type in event_types:
-                if callback not in self.registered[event_type]:
-                    try:
-                        self.registered[event_type].append(Callback(fn=weakref.ref(callback.__func__), obj=weakref.ref(callback.__self__)))
-                    except AttributeError:
-                        self.registered[event_type].append(Callback(fn=weakref.ref(callback.__func__), obj=None))
+                self.registered[event_type].add(callback)
 
     def unregister(self, callback, event_types):
         """
@@ -60,6 +64,7 @@ class EventDispatch(object):
         :rtype bool:
         """
         with self.lock:
+            callback = self.make_callback(callback)
             for event_type in event_types:
                 if callback in self.registered[event_type]:
                     self.registered[event_type].remove(callback)
@@ -76,7 +81,7 @@ class EventDispatch(object):
             item = self.queue.get_nowait()
             event = item[2]
             cleanup_callbacks = []
-            for callback in self.registered[type(event).__name__]:
+            for callback in set(self.registered[type(event).__name__]):
                 fn = callback.fn()
                 if fn is None:
                     cleanup_callbacks.append(callback)

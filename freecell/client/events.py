@@ -1,6 +1,7 @@
 import Queue
 import threading
 import time
+import weakref
 
 from collections import defaultdict, namedtuple
 
@@ -26,6 +27,12 @@ LoginTokenEvent = namedtuple('LoginTokenEvent', ['username', 'token'])
 SeedRequestEvent = namedtuple('SeedRequestEvent', [])
 InputFlowEvent = namedtuple('InputFlowEvent', ['buffer', 'pause'])
 
+
+# newstyle events follow
+NameEnteredEvent = namedtuple('NameEnteredEvent', ['name'])
+
+Callback = namedtuple('Callback', ['fn', 'obj'])
+
 class EventDispatch(object):
     def __init__(self):
         self.queue = Queue.PriorityQueue()
@@ -41,7 +48,10 @@ class EventDispatch(object):
         with self.lock:
             for event_type in event_types:
                 if callback not in self.registered[event_type]:
-                    self.registered[event_type].append(callback)
+                    try:
+                        self.registered[event_type].append(Callback(fn=weakref.ref(callback.__func__), obj=weakref.ref(callback.__self__)))
+                    except AttributeError:
+                        self.registered[event_type].append(Callback(fn=weakref.ref(callback.__func__), obj=None))
 
     def unregister(self, callback, event_types):
         """
@@ -65,8 +75,25 @@ class EventDispatch(object):
         while not self.queue.empty():
             item = self.queue.get_nowait()
             event = item[2]
+            cleanup_callbacks = []
             for callback in self.registered[type(event).__name__]:
-                callback(event)
+                fn = callback.fn()
+                if fn is None:
+                    cleanup_callbacks.append(callback)
+                    continue
+
+                if callback.obj is None:
+                    fn(event)
+                else:
+                    obj = callback.obj()
+                    if obj is None:
+                        cleanup_callbacks.append(callback)
+                        continue
+                    fn(obj, event)
+
+            for callback in cleanup_callbacks:
+                self.registered[type(event).__name__].remove(callback)
+
             self.queue.task_done()
 
             if time.time() - start >= max_time:

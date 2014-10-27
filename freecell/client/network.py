@@ -15,7 +15,7 @@ from events import *
 import events
 
 
-class FreeCellNetworking(asynchat.async_chat):
+class NetworkView(asynchat.async_chat):
     def __init__(self, host="knitwithlogic.com", port=11982):
         asynchat.async_chat.__init__(self)
         self.event_dispatch = events.event_dispatch
@@ -26,6 +26,9 @@ class FreeCellNetworking(asynchat.async_chat):
         self.connect(self.addr)
         self.lock = threading.Lock()
         self.state = "connecting"
+
+    def update(self):
+        pass # already running in our own thread, so we don't need to rely on the main game loop ticking through
 
     def run(self, shutdown_event):
         shutdown_event.wait()

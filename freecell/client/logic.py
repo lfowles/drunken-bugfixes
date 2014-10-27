@@ -4,7 +4,7 @@ from board import Tableau, Deck
 from events import *
 import events
 
-
+# TODO: serverize this so it can validate on the server
 class FreeCellLogic(object):
     def __init__(self):
         self.deck = Deck()

@@ -14,10 +14,30 @@ class Competitor(object):
         """
         :param network.FreecellConnection connection: Connection
         """
+        # Perhaps give each connection their own queue, so competitors don't get events for other IDs
         self.connection = connection
+        self.id = connection.id
+        self.event_dispatch = events.event_dispatch
+        self.seed = 0
+        self.subscriptions = []
+        self.event_dispatch.register(self.subscribe, ["Subscribe"])
+        self.event_dispatch.register(self.unsubscribe, ["Unsubscribe"])
+
+    def subscribe(self, event):
+        if event.id == self.id:
+            self.subscriptions.append(event.sub_id)
+
+    def unsubscribe(self, event):
+        if event.id == self.id:
+            if event.sub_id in self.subscriptions:
+                self.subscriptions.remove(event.sub_id)
 
     def send(self, event):
         self.connection.send_json(event)
+
+    def unregister(self):
+        self.event_dispatch.unregister(self.subscribe, ["Subscribe"])
+        self.event_dispatch.unregister(self.unsubscribe, ["Unsubscribe"])
 
 # last until everyone finishes seed or quits
 class CompetitionServer(object):
@@ -36,6 +56,7 @@ class CompetitionServer(object):
         self.event_dispatch.register(self.competitor_quit, ["QuitEvent"])
         self.event_dispatch.register(self.competitor_win, ["WinEvent"])
         self.event_dispatch.register(self.send_seed, ["SeedRequestEvent"])
+
         MAX_FPS = 30
         S_PER_FRAME = 1.0/MAX_FPS
         self.shutdown_event.set()
@@ -76,9 +97,23 @@ class CompetitionServer(object):
     def send_seed(self, event):
         print "SEND SEED"
         if event.id in self.competitors:
-            self.competitors[event.id].send({"event":"seed", "seed":self.current_seed})
+            competitor = self.competitors[event.id]
+            competitor.send({"event":"seed", "seed":self.current_seed})
+            competitor.seed = self.current_seed
+            # get a list of competitors on the same seed
+            # 1) send a random selection of up to 3
+            # 2) send the new player to everyone else with < 3 subscriptions
+            same_seed_players = [comp for comp in self.competitors if comp.seed == competitor.seed and comp != competitor]
+            for player in random.sample(same_seed_players, 3):
+                competitor.send({"event":"suggestedsubscription", "id":player.id})
+
+            for player in same_seed_players:
+                if len(player.subscriptions) < 3:
+                    player.send({"event":"suggestedsubscription", "id":competitor.id})
+
 
     def competitor_quit(self, event):
         print "QUIT: %s %s" % (event.id, event.reason)
         if event.id in self.competitors:
+            self.competitors[event.id].unregister()
             del self.competitors[event.id]

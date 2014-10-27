@@ -5,7 +5,7 @@ import random
 import events
 from events import *
 from logic import FreeCellLogic
-from network import FreeCellNetworking
+from network import NetworkView
 from input import CursesInput
 
 from freecellgameview import FreecellGameView
@@ -31,11 +31,13 @@ class FreeCellGame(object):
         self.quit_message = None
         self.state = ""
         self.threads = []
+        self.username = "localuser"
+
         input_thread = threading.Thread(target=self.input.run)
         input_thread.daemon = True
         self.threads.append(input_thread)
         if networking:
-            self.networking = FreeCellNetworking()
+            self.networking = NetworkView()
             self.threads.append(threading.Thread(target=self.networking.run, args=(self.shutdown_event,)))
         else:
             event = SeedEvent(seed=seed or random.randint(0, 0xFFFFFFFF))
@@ -50,15 +52,12 @@ class FreeCellGame(object):
             except ImportError:
                 pass # Can't debug if pydevd or debug don't exist, so whatever
 
+        #if self.networking is not None:
+        main_menu = MainMenuView(stdscr)
+        main_menu.load()
+        self.views.append(main_menu)
         if self.networking is not None:
-            main_menu = MainMenuView(stdscr)
-            main_menu.load()
-            self.views.append(main_menu)
             self.event_dispatch.register(self.state_change, ["LoggedInEvent"])
-        else:
-            game_view = FreecellGameView(stdscr, self.logic.table, self.logic)
-            game_view.load()
-            self.views.append(game_view)
 
         self.event_dispatch.register(self.finish, ["FinishEvent"])
         self.event_dispatch.register(self.quit, ["QuitEvent"])
@@ -93,6 +92,7 @@ class FreeCellGame(object):
 
     def state_change(self, event):
         if isinstance(event, LoggedInEvent):
+            self.username = event.username
             self.event_dispatch.register(self.set_seed, ["SeedEvent"])
             self.event_dispatch.send(SeedRequestEvent())
 
@@ -106,7 +106,7 @@ class FreeCellGame(object):
         # change window
         main_menu = self.views.pop()
         main_menu.unload()
-        game_view = FreecellGameView(main_menu.window, self.logic.table, self.logic)
+        game_view = FreecellGameView(main_menu.window, self.username, self.logic.table, self.logic)
         game_view.load()
         self.views.append(game_view)
 

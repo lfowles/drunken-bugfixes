@@ -49,12 +49,6 @@ class MainMenuView(HumanView):
             return True
         return False
 
-    def update(self, elapsed):
-        super(MainMenuView, self).update(elapsed)
-
-    def render(self, elapsed):
-        return super(MainMenuView, self).render(elapsed)
-
     def register_reply(self, event):
         self.event_dispatch.unregister(self.register_reply, ["NameTakenEvent", "LoginTokenEvent"])
         username = self.login_ui.name_input.text
